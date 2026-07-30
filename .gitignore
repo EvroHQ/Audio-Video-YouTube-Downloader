@@ -5,6 +5,9 @@ release
 *.log
 .DS_Store
 
+# Local build workaround artifacts (see BUILDING.md)
+serve/
+
 # Bundled binaries are large; the developer supplies them locally before build.
 resources/bin/yt-dlp.exe
 resources/bin/ffmpeg.exe

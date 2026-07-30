@@ -1,109 +1,63 @@
 # Audio/Video YouTube Downloader
 
-A minimalist Windows desktop app to download **audio** or **video** from a YouTube URL, with optional **time-range trimming**. Built with **Electron + React + Tailwind CSS**, powered by **yt-dlp** and **ffmpeg** which are fully bundled into the final installer — the end user installs nothing manually.
+A simple, modern Windows app to download **audio** or **video** from a YouTube link — with optional trimming to a specific time range.
 
-![App icon](resources/icon.ico)
-
-## Features
-
-- Paste a YouTube URL (with clipboard button + real-time validation)
-- Choose **Audio** (WAV 48kHz stereo) or **Video** (MP4 1080p max)
-- Optionally trim to a **specific start/end range**
-- Pick and remember an **output folder** (persisted via `electron-store`)
-- Live **terminal-style logs** with timestamps and a parsed **progress bar**
-- Dark, modern UI with violet→fuchsia accents and subtle Framer Motion animations
+Everything is built in: you don't need to install anything else, open a terminal, or configure anything. Just download, open, and go.
 
 ---
 
-## 1. Prerequisites (developer only)
+## Download
 
-- [Node.js](https://nodejs.org/) 18+ and npm
-- Windows (for building the `.exe`)
+Grab the latest version from the [**Releases page**](https://github.com/EvroHQ/Audio-Video-YouTube-Downloader/releases/latest):
 
-## 2. Install dependencies
+| File | For you if… |
+| --- | --- |
+| **…Setup-1.0.0.exe** | You want a normal install (Start-menu shortcut, choose the folder). |
+| **…Portable-1.0.0.exe** | You want a single file to run directly, no installation. |
 
-```bash
-npm install
-```
-
-## 3. Add the bundled binaries (REQUIRED before building)
-
-The app runs `yt-dlp.exe` and `ffmpeg.exe` as bundled external binaries. **Place both files** in `resources/bin/` **before your first build**:
-
-```
-resources/
-  bin/
-    yt-dlp.exe
-    ffmpeg.exe
-```
-
-- **yt-dlp.exe** — download the Windows build from
-  https://github.com/yt-dlp/yt-dlp/releases (grab the file named `yt-dlp.exe`).
-- **ffmpeg.exe** — download a Windows build from
-  https://www.gyan.dev/ffmpeg/builds/ (e.g. `ffmpeg-release-essentials.zip`),
-  unzip it, and copy `bin/ffmpeg.exe` into `resources/bin/`.
-
-> These binaries are git-ignored on purpose (they are large). They are bundled
-> into the packaged app automatically via electron-builder's `extraResources`,
-> so **end users never have to install anything** — no cmd, no winget, no PATH setup.
-
-The app performs a silent check at startup and prints a clear error in the log
-area if either binary is missing (instead of crashing).
-
-## 4. Run in development
-
-```bash
-npm run dev
-```
-
-This launches the Electron app with hot-reload for the renderer.
-
-## 5. Build the Windows `.exe`
-
-```bash
-npm run build:win
-```
-
-This produces both an **installer** and a **portable** executable in the `release/` folder:
-
-- `release/Audio Video YouTube Downloader-Setup-1.0.0.exe` — NSIS installer (lets the user choose the install directory)
-- `release/Audio Video YouTube Downloader-Portable-1.0.0.exe` — single-file portable app
-
-Both include `yt-dlp.exe` and `ffmpeg.exe` inside, so the app works **out-of-the-box** after installation.
+Both versions are identical in features.
 
 ---
 
-## How downloads work
+## Install
 
-| Format | Range | Command flow |
-| ------ | ----- | ------------ |
-| Audio  | No    | `yt-dlp -x --audio-format wav "URL"` |
-| Audio  | Yes   | `yt-dlp -f 251 -o temp_%(id)s.%(ext)s "URL"` → `ffmpeg -ss START -to END → audio_START-END.wav` → delete temp |
-| Video  | No    | `yt-dlp -f "bv*[height<=1080]+ba/b[height<=1080]" "URL"` (merged to mp4) |
-| Video  | Yes   | `yt-dlp ... -o temp_%(id)s.%(ext)s "URL"` → `ffmpeg -ss START -to END -c copy → video_START-END.mp4` → delete temp |
+- **Setup**: double-click it, choose where to install, and finish. A shortcut is created.
+- **Portable**: just double-click the `.exe` — nothing gets installed.
 
-All stdout/stderr from the binaries is streamed live to the in-app log via IPC.
+> **Windows SmartScreen warning?** Because the app isn't code-signed, Windows may show a blue “Windows protected your PC” screen the first time. Click **More info → Run anyway**. This is normal for small independent apps.
 
-## Project structure
+---
 
-```
-resources/
-  bin/            yt-dlp.exe + ffmpeg.exe (you provide these)
-  icon.ico        app icon (256x256 placeholder — replace with your own)
-src/
-  main/index.js   Electron main process: window, IPC, download logic, getBinPath()
-  preload/index.js contextBridge API (selectFolder/getConfig/setConfig/startDownload/onLog/onComplete)
-  renderer/       React + Tailwind UI
-electron-builder.yml  packaging config (nsis + portable, extraResources)
-electron.vite.config.mjs
-```
+## How to use
 
-## Notes
+1. **Paste a YouTube link** into the field (or click **Paste**). The border turns green when the link is valid.
+2. **Choose the format**:
+   - **Audio** → **WAV** (44.1 kHz, lossless) or **MP3** (320 kbps)
+   - **Video** → **1080p**, **2K**, or **4K** (it takes the best quality available up to your choice; video always includes sound)
+3. *(Optional)* Turn on **“Download a specific range”** to grab only a portion.
+   - Just type the digits — the field formats itself: typing `001030` becomes `00:10:30` (hh:mm:ss).
+4. **Choose the output folder** with **Change** (it's remembered next time). By default it's your **Downloads** folder.
+5. Click **DOWNLOAD**. You can follow progress in the log and the progress bar.
+   - Need to cancel? Click **Stop**.
 
-- **Security**: the renderer runs with `nodeIntegration: false` and `contextIsolation: true`. `child_process` is never used in the renderer — everything goes through IPC in the preload.
-- **Encoding**: child processes run with `PYTHONIOENCODING=utf-8` to keep log characters intact.
-- **Default output folder**: your system `Downloads` folder if none is chosen.
-- **Icon**: `resources/icon.ico` is a generated placeholder (violet→fuchsia gradient with a white download glyph). Replace it with your own branding if desired.
+Your file appears in the chosen folder when the log says the download finished.
+
+---
+
+## Good to know
+
+- **Nothing else to install** — the tools that do the work (yt-dlp and ffmpeg) are already inside the app.
+- You need an **internet connection** to download from YouTube, of course.
+- **Antivirus false positives**: some antivirus software flags download tools. The app is safe; if needed, allow it in your antivirus.
+- Downloading copyrighted content may be against YouTube's Terms of Service — use responsibly and only for content you have the right to download.
+
+---
+
+## Credits
+
+Made by [@EvroHQ](https://github.com/EvroHQ). Powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ffmpeg](https://ffmpeg.org/).
+
+Developers: see [BUILDING.md](BUILDING.md) to build from source.
 
 ## License
 
