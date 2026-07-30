@@ -1,0 +1,32 @@
+appId: com.evrohq.ytdownloader
+productName: Audio Video YouTube Downloader
+directories:
+  output: release
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml,package-lock.json}'
+asarUnpack:
+  - resources/**
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter:
+      - '**/*'
+win:
+  target:
+    - nsis
+    - portable
+  icon: resources/icon.ico
+  artifactName: ${productName}-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-Setup-${version}.${ext}
+  shortcutName: ${productName}
+portable:
+  artifactName: ${productName}-Portable-${version}.${ext}

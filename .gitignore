@@ -1,0 +1,10 @@
+node_modules
+dist
+out
+release
+*.log
+.DS_Store
+
+# Bundled binaries are large; the developer supplies them locally before build.
+resources/bin/yt-dlp.exe
+resources/bin/ffmpeg.exe
