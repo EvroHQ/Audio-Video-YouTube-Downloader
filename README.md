@@ -2,29 +2,13 @@
 
 A simple, modern Windows app to download **audio** or **video** from a YouTube link — with optional trimming to a specific time range.
 
-Everything is built in: you don't need to install anything else, open a terminal, or configure anything. Just download, open, and go.
+![Audio/Video YouTube Downloader](docs/screenshot.png)
 
----
+Everything is built in — no extra tools, no terminal, no setup.
 
 ## Download
 
-Grab the latest version from the [**Releases page**](https://github.com/EvroHQ/Audio-Video-YouTube-Downloader/releases/latest):
-
-| File | For you if… |
-| --- | --- |
-| **…Setup-1.0.0.exe** | You want a normal install (Start-menu shortcut, choose the folder). |
-| **…Portable-1.0.0.exe** | You want a single file to run directly, no installation. |
-
-Both versions are identical in features.
-
----
-
-## Install
-
-- **Setup**: double-click it, choose where to install, and finish. A shortcut is created.
-- **Portable**: just double-click the `.exe` — nothing gets installed.
-
-> **Windows SmartScreen warning?** Because the app isn't code-signed, Windows may show a blue “Windows protected your PC” screen the first time. Click **More info → Run anyway**. This is normal for small independent apps.
+Get the latest version from the [**Releases page**](https://github.com/EvroHQ/Audio-Video-YouTube-Downloader/releases/latest) — installer or portable, both identical in features.
 
 ---
 
