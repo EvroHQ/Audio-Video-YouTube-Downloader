@@ -30,3 +30,7 @@ nsis:
   shortcutName: ${productName}
 portable:
   artifactName: ${productName}-Portable-${version}.${ext}
+publish:
+  provider: github
+  owner: EvroHQ
+  repo: audio-video-youtube-downloader

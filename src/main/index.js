@@ -1,9 +1,14 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, net } from 'electron'
 import { join } from 'path'
-import { existsSync, readdirSync, unlinkSync } from 'fs'
+import { existsSync, readdirSync, unlinkSync, mkdirSync, renameSync, createWriteStream } from 'fs'
 import { spawn } from 'child_process'
 import Store from 'electron-store'
+import { autoUpdater } from 'electron-updater'
 import appIcon from '../../resources/icon.ico?asset'
+
+const YTDLP_LATEST_API = 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest'
+const YTDLP_DOWNLOAD_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+const HTTP_USER_AGENT = 'AudioVideoYouTubeDownloader'
 
 const store = new Store({
   defaults: {
@@ -14,6 +19,12 @@ const store = new Store({
 let mainWindow = null
 let currentChild = null
 let cancelRequested = false
+
+// Fixed size, tall enough to fit the busiest state (trim open + downloading)
+// with the footer and progress bar always visible. The console (flex-1)
+// absorbs the slack in lighter states.
+const WINDOW_WIDTH = 780
+const WINDOW_HEIGHT = 858
 
 const CANCELLED = '__CANCELLED__'
 
@@ -33,20 +44,62 @@ function killTree(child) {
 }
 
 /**
- * Resolve the absolute path to a bundled binary (yt-dlp.exe / ffmpeg.exe).
+ * Resolve the absolute path to the *bundled* binary (yt-dlp.exe / ffmpeg.exe).
  * In dev the binaries live in <projectRoot>/resources/bin.
  * In a packaged build they are extracted (via extraResources) to
  * process.resourcesPath/bin.
  */
-function getBinPath(name) {
+// Validate that a string is a real YouTube video URL (and not just any site
+// yt-dlp happens to support). Lenient about a missing scheme.
+function isYouTubeUrl(value) {
+  let v = String(value == null ? '' : value).trim()
+  if (!v) return false
+  if (!/^https?:\/\//i.test(v)) v = `https://${v}`
+  try {
+    const u = new URL(v)
+    const host = u.hostname.toLowerCase().replace(/^www\./, '')
+    const allowed = [
+      'youtube.com',
+      'm.youtube.com',
+      'music.youtube.com',
+      'youtu.be',
+      'youtube-nocookie.com'
+    ]
+    if (!allowed.includes(host)) return false
+    if (host === 'youtu.be') return u.pathname.length > 1
+    if (u.pathname === '/watch') return u.searchParams.has('v')
+    return /^\/(shorts|live|embed|v)\/[\w-]+/.test(u.pathname)
+  } catch (e) {
+    return false
+  }
+}
+
+function getBundledBinPath(name) {
   const root = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources')
   return join(root, 'bin', name)
 }
 
+// Writable directory where in-app updated binaries (e.g. a newer yt-dlp) live.
+// Program Files is read-only for non-admins, so self-updating the bundled exe
+// isn't reliable — instead we drop the newer copy here and prefer it.
+function getUserBinDir() {
+  return join(app.getPath('userData'), 'bin')
+}
+
+/**
+ * Resolve a binary, preferring a user-updated copy (downloaded in-app) over the
+ * bundled one. This lets us ship yt-dlp updates without admin rights.
+ */
+function getBinPath(name) {
+  const userCopy = join(getUserBinDir(), name)
+  if (existsSync(userCopy)) return userCopy
+  return getBundledBinPath(name)
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 720,
-    height: 780,
+    width: WINDOW_WIDTH,
+    height: WINDOW_HEIGHT,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -99,6 +152,105 @@ function sendComplete(payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('download-complete', payload)
   }
+}
+
+function sendAppUpdate(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('app-update', payload)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Network + version helpers (yt-dlp self-update)
+// ---------------------------------------------------------------------------
+
+// GET a URL and resolve with its body as text. Uses Electron's net module so
+// it honours the system proxy and follows redirects automatically.
+function fetchText(url) {
+  return new Promise((resolve, reject) => {
+    const request = net.request({ url, redirect: 'follow' })
+    request.setHeader('User-Agent', HTTP_USER_AGENT)
+    request.on('response', (response) => {
+      let data = ''
+      response.on('data', (c) => (data += c.toString('utf-8')))
+      response.on('end', () => resolve({ status: response.statusCode, body: data }))
+      response.on('error', reject)
+    })
+    request.on('error', reject)
+    request.end()
+  })
+}
+
+// Download a URL to `dest`, streaming progress to the renderer. Writes to a
+// temporary file first and only swaps it in once complete, so an interrupted
+// download can never corrupt the existing binary.
+function downloadFile(url, dest, label = 'file') {
+  return new Promise((resolve, reject) => {
+    const tmp = `${dest}.download`
+    const request = net.request({ url, redirect: 'follow' })
+    request.setHeader('User-Agent', HTTP_USER_AGENT)
+    request.on('response', (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`Download failed (HTTP ${response.statusCode})`))
+        return
+      }
+      const clHeader = response.headers['content-length']
+      const total = parseInt(Array.isArray(clHeader) ? clHeader[0] : clHeader || '0', 10)
+      let received = 0
+      let lastPct = -1
+      const file = createWriteStream(tmp)
+      response.on('data', (chunk) => {
+        received += chunk.length
+        file.write(chunk)
+        if (total) {
+          const pct = Math.round((received / total) * 100)
+          if (pct !== lastPct) {
+            lastPct = pct
+            sendLog(`Downloading ${label}... ${pct}%`)
+          }
+        }
+      })
+      response.on('end', () => {
+        file.end(() => {
+          try {
+            if (existsSync(dest)) unlinkSync(dest)
+            renameSync(tmp, dest)
+            resolve()
+          } catch (e) {
+            reject(e)
+          }
+        })
+      })
+      response.on('error', reject)
+    })
+    request.on('error', reject)
+    request.end()
+  })
+}
+
+// Run a binary just to capture its stdout (e.g. `yt-dlp --version`) without
+// streaming to the renderer log. Resolves null if it can't be run.
+function getProcessOutput(binPath, args) {
+  return new Promise((resolve) => {
+    if (!existsSync(binPath)) return resolve(null)
+    const child = spawn(binPath, args, { windowsHide: true })
+    let out = ''
+    child.stdout.on('data', (c) => (out += c.toString('utf-8')))
+    child.on('error', () => resolve(null))
+    child.on('close', () => resolve(out.trim() || null))
+  })
+}
+
+// Compare yt-dlp's date-based versions ("2024.08.06"). Returns >0 if a>b.
+function compareYtdlpVersions(a, b) {
+  const pa = String(a).split(/[.\-]/).map((n) => parseInt(n, 10) || 0)
+  const pb = String(b).split(/[.\-]/).map((n) => parseInt(n, 10) || 0)
+  const len = Math.max(pa.length, pb.length)
+  for (let i = 0; i < len; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0)
+    if (d !== 0) return d > 0 ? 1 : -1
+  }
+  return 0
 }
 
 // Parse a flexible time string into seconds. Accepts "ss", "mm:ss",
@@ -211,6 +363,26 @@ function findTempFile(folder, extensions) {
   return null
 }
 
+// Remove every leftover temp_* file (full downloads AND yt-dlp .part fragments)
+// from the output folder. Called in a finally block so nothing is left behind
+// even when a trim fails or the user cancels mid-download.
+function cleanupTempFiles(folder) {
+  try {
+    for (const f of readdirSync(folder)) {
+      if (f.startsWith('temp_')) {
+        try {
+          unlinkSync(join(folder, f))
+          sendLog(`Removed temp file: ${f}`)
+        } catch (e) {
+          // file may be locked/gone — ignore
+        }
+      }
+    }
+  } catch (e) {
+    // folder unreadable — ignore
+  }
+}
+
 // Probe a media file's duration (seconds) by parsing ffmpeg's stderr banner.
 // Returns null if it can't be determined. ffmpeg exits non-zero here because
 // no output is specified, which is expected — we only want the banner.
@@ -237,6 +409,10 @@ function getMediaDuration(ffmpegPath, file) {
 // ---------------------------------------------------------------------------
 async function handleDownload(params) {
   const { url, format, useRange, start, end } = params
+
+  if (!isYouTubeUrl(url)) {
+    throw new Error('Please paste a valid YouTube link (youtube.com or youtu.be).')
+  }
   const audioFormat = params.audioFormat === 'mp3' ? 'mp3' : 'wav'
   const videoQuality = ['4k', '2k', '1080'].includes(params.videoQuality)
     ? params.videoQuality
@@ -325,6 +501,7 @@ async function handleDownload(params) {
       // WAV: force 44.1 kHz / 16-bit stereo.
       args.push('--postprocessor-args', 'ffmpeg:-ar 44100 -ac 2 -c:a pcm_s16le')
     }
+    args.push('--windows-filenames', '--trim-filenames', '200')
     args.push('-o', '%(title)s.%(ext)s', url)
     await runBinary(ytdlp, args, outputFolder)
     return
@@ -333,24 +510,22 @@ async function handleDownload(params) {
   if (format === 'audio' && useRange) {
     // 1. download best audio stream to a temp file
     await runBinary(ytdlp, ['-f', '251', '-o', 'temp_%(id)s.%(ext)s', url], outputFolder)
-    // 2. locate temp file
-    const temp = findTempFile(outputFolder, ['.webm', '.m4a', '.opus'])
-    if (!temp) throw new Error('Could not locate the downloaded temp audio file.')
-    // 3. trim + convert to the chosen audio format
-    const outName = join(outputFolder, `audio_${stamp}.${audioExt}`)
-    if (!existsSync(ffmpeg)) throw new Error('ffmpeg.exe is missing from the bundled resources.')
-    const effectiveEnd = await checkRangeAgainstMedia(temp)
-    await runBinary(
-      ffmpeg,
-      ['-y', '-i', temp, '-ss', startStamp, '-to', effectiveEnd, ...audioEncodeArgs, outName],
-      outputFolder
-    )
-    // 4. cleanup
     try {
-      unlinkSync(temp)
-      sendLog(`Removed temp file: ${temp.split(/[\\/]/).pop()}`)
-    } catch (e) {
-      sendLog(`Warning: could not remove temp file (${e.message})`)
+      // 2. locate temp file
+      const temp = findTempFile(outputFolder, ['.webm', '.m4a', '.opus'])
+      if (!temp) throw new Error('Could not locate the downloaded temp audio file.')
+      // 3. trim + convert to the chosen audio format
+      const outName = join(outputFolder, `audio_${stamp}.${audioExt}`)
+      if (!existsSync(ffmpeg)) throw new Error('ffmpeg.exe is missing from the bundled resources.')
+      const effectiveEnd = await checkRangeAgainstMedia(temp)
+      await runBinary(
+        ffmpeg,
+        ['-y', '-i', temp, '-ss', startStamp, '-to', effectiveEnd, ...audioEncodeArgs, outName],
+        outputFolder
+      )
+    } finally {
+      // 4. cleanup — always, even on error/cancel
+      cleanupTempFiles(outputFolder)
     }
     return
   }
@@ -365,6 +540,9 @@ async function handleDownload(params) {
         ffmpeg,
         '--merge-output-format',
         'mp4',
+        '--windows-filenames',
+        '--trim-filenames',
+        '200',
         '-o',
         '%(title)s.%(ext)s',
         url
@@ -390,21 +568,19 @@ async function handleDownload(params) {
       ],
       outputFolder
     )
-    const temp = findTempFile(outputFolder, ['.mp4', '.mkv', '.webm'])
-    if (!temp) throw new Error('Could not locate the downloaded temp video file.')
-    const outName = join(outputFolder, `video_${stamp}.mp4`)
-    if (!existsSync(ffmpeg)) throw new Error('ffmpeg.exe is missing from the bundled resources.')
-    const effectiveEnd = await checkRangeAgainstMedia(temp)
-    await runBinary(
-      ffmpeg,
-      ['-y', '-i', temp, '-ss', startStamp, '-to', effectiveEnd, '-c', 'copy', outName],
-      outputFolder
-    )
     try {
-      unlinkSync(temp)
-      sendLog(`Removed temp file: ${temp.split(/[\\/]/).pop()}`)
-    } catch (e) {
-      sendLog(`Warning: could not remove temp file (${e.message})`)
+      const temp = findTempFile(outputFolder, ['.mp4', '.mkv', '.webm'])
+      if (!temp) throw new Error('Could not locate the downloaded temp video file.')
+      const outName = join(outputFolder, `video_${stamp}.mp4`)
+      if (!existsSync(ffmpeg)) throw new Error('ffmpeg.exe is missing from the bundled resources.')
+      const effectiveEnd = await checkRangeAgainstMedia(temp)
+      await runBinary(
+        ffmpeg,
+        ['-y', '-i', temp, '-ss', startStamp, '-to', effectiveEnd, '-c', 'copy', outName],
+        outputFolder
+      )
+    } finally {
+      cleanupTempFiles(outputFolder)
     }
     return
   }
@@ -427,7 +603,8 @@ ipcMain.handle('select-folder', async () => {
 
 ipcMain.handle('get-config', () => {
   return {
-    outputFolder: store.get('outputFolder') || app.getPath('downloads')
+    outputFolder: store.get('outputFolder') || app.getPath('downloads'),
+    version: app.getVersion()
   }
 })
 
@@ -467,6 +644,104 @@ ipcMain.handle('cancel-download', () => {
   return true
 })
 
+// Compare the bundled/updated yt-dlp version against the latest GitHub release.
+ipcMain.handle('check-ytdlp-update', async () => {
+  try {
+    const current = await getProcessOutput(getBinPath('yt-dlp.exe'), ['--version'])
+    const res = await fetchText(YTDLP_LATEST_API)
+    let latest = null
+    try {
+      latest = JSON.parse(res.body)?.tag_name || null
+    } catch (e) {
+      latest = null
+    }
+    const updateAvailable = !!(current && latest && compareYtdlpVersions(latest, current) > 0)
+    return { current, latest, updateAvailable }
+  } catch (e) {
+    return { current: null, latest: null, updateAvailable: false, error: e.message }
+  }
+})
+
+// Download the latest yt-dlp.exe into the writable user bin dir (preferred by
+// getBinPath). Works without admin rights and survives app reinstalls.
+ipcMain.handle('update-ytdlp', async () => {
+  try {
+    const dir = getUserBinDir()
+    mkdirSync(dir, { recursive: true })
+    const dest = join(dir, 'yt-dlp.exe')
+    sendLog('Updating yt-dlp...')
+    await downloadFile(YTDLP_DOWNLOAD_URL, dest, 'yt-dlp')
+    const version = await getProcessOutput(dest, ['--version'])
+    sendLog(`yt-dlp updated to ${version || 'latest'}.`)
+    return { success: true, version }
+  } catch (e) {
+    sendLog(`ERROR updating yt-dlp: ${e.message}`)
+    return { success: false, error: e.message }
+  }
+})
+
+// Quit and install a downloaded app update (electron-updater).
+ipcMain.handle('install-update', () => {
+  autoUpdater.quitAndInstall()
+  return true
+})
+
+// ---------------------------------------------------------------------------
+// App auto-update (electron-updater, published via GitHub Releases)
+// ---------------------------------------------------------------------------
+function setupAutoUpdater() {
+  // In a packaged (nsis) build this runs for real. In dev, electron-updater
+  // normally no-ops — we force it with a dev config so the update-check flow
+  // (and its logging) can be exercised with `npm run dev` too.
+  if (!app.isPackaged) {
+    try {
+      autoUpdater.forceDevUpdateConfig = true
+      autoUpdater.updateConfigPath = join(app.getAppPath(), 'dev-app-update.yml')
+    } catch (e) {
+      return
+    }
+  }
+
+  // Silence electron-updater's built-in console logger (it dumps full stack
+  // traces / HTTP headers to the terminal). We surface a clean one-liner to the
+  // in-app log via the 'error' handler below instead.
+  autoUpdater.logger = null
+
+  // Don't actually pull down an installer while developing.
+  autoUpdater.autoDownload = app.isPackaged
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('update-available', (info) => {
+    sendAppUpdate({ status: 'available', version: info?.version })
+    sendLog(`App update available: v${info?.version}. Downloading in the background...`)
+  })
+  autoUpdater.on('update-not-available', () => {
+    sendAppUpdate({ status: 'none' })
+  })
+  autoUpdater.on('download-progress', (p) => {
+    sendAppUpdate({ status: 'downloading', percent: Math.round(p?.percent || 0) })
+  })
+  autoUpdater.on('update-downloaded', (info) => {
+    sendAppUpdate({ status: 'downloaded', version: info?.version })
+    sendLog(`App update v${info?.version} ready. Restart to install.`)
+  })
+  autoUpdater.on('error', (err) => {
+    const msg = err == null ? '' : err.message || String(err)
+    // A missing latest.yml / 404 / no-release simply means no proper release
+    // has been published yet — a normal state, not a real error. Keep the log
+    // clean (and free of the word "error" so the UI doesn't paint it red).
+    if (/latest\.yml|404|No published|ENOTFOUND|ETIMEDOUT|net::|getaddrinfo/i.test(msg)) {
+      sendLog('Update check: app is up to date.')
+    } else {
+      sendLog(`Update check could not complete (${msg}).`)
+    }
+  })
+
+  autoUpdater.checkForUpdates().catch(() => {
+    // no network / no release yet — ignore
+  })
+}
+
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
@@ -492,6 +767,9 @@ app.whenReady().then(() => {
       sendLog('Ready. Binaries detected. Paste a YouTube URL to begin.')
     }
   }, 800)
+
+  // Check for an app update (electron-updater / GitHub Releases).
+  setupAutoUpdater()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

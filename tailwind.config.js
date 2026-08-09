@@ -4,22 +4,55 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        base: '#0a0a0a',
-        surface: '#1a1a1a',
-        'surface-border': '#2a2a2a',
-        'text-primary': '#fafafa',
-        'text-secondary': '#a1a1aa',
-        accentStart: '#a855f7',
-        accentEnd: '#ec4899',
-        success: '#10b981',
-        error: '#ef4444'
+        base: '#08080b',
+        surface: '#111114',
+        'surface-border': '#232329',
+        'text-primary': '#f4f4f5',
+        'text-secondary': '#8b8b96',
+        'text-muted': '#5c5c66',
+        accentStart: '#5618a7',
+        accentMid: '#a02368',
+        accentEnd: '#db2736',
+        success: '#34d399',
+        error: '#f87171'
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', '"Fira Code"', 'Consolas', 'monospace']
       },
       backgroundImage: {
-        'accent-gradient': 'linear-gradient(135deg, #a855f7 0%, #ec4899 100%)'
+        'accent-gradient': 'linear-gradient(135deg, rgb(86, 24, 167) 0%, rgb(219, 39, 54) 100%)',
+        'accent-gradient-soft':
+          'linear-gradient(135deg, rgba(86, 24, 167, 0.18) 0%, rgba(219, 39, 54, 0.18) 100%)'
+      },
+      boxShadow: {
+        glow: '0 10px 40px -10px rgba(86, 24, 167, 0.5)',
+        'glow-lg': '0 20px 60px -12px rgba(86, 24, 167, 0.55)',
+        glass: '0 8px 32px -8px rgba(0, 0, 0, 0.6)'
+      },
+      borderRadius: {
+        '2.5xl': '1.25rem'
+      },
+      keyframes: {
+        drift: {
+          '0%, 100%': { transform: 'translate(0, 0) scale(1)' },
+          '33%': { transform: 'translate(8%, -6%) scale(1.08)' },
+          '66%': { transform: 'translate(-6%, 5%) scale(0.96)' }
+        },
+        shine: {
+          '0%': { transform: 'translateX(-120%)' },
+          '60%, 100%': { transform: 'translateX(220%)' }
+        },
+        'gradient-pan': {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' }
+        }
+      },
+      animation: {
+        'drift-slow': 'drift 20s ease-in-out infinite',
+        'drift-slower': 'drift 28s ease-in-out infinite',
+        shine: 'shine 3.5s ease-in-out infinite',
+        'gradient-pan': 'gradient-pan 6s ease infinite'
       }
     }
   },

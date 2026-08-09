@@ -6,6 +6,14 @@ const api = {
   setConfig: (cfg) => ipcRenderer.invoke('set-config', cfg),
   startDownload: (params) => ipcRenderer.invoke('start-download', params),
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
+  checkYtdlpUpdate: () => ipcRenderer.invoke('check-ytdlp-update'),
+  updateYtdlp: () => ipcRenderer.invoke('update-ytdlp'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  onAppUpdate: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('app-update', listener)
+    return () => ipcRenderer.removeListener('app-update', listener)
+  },
   onLog: (callback) => {
     const listener = (_event, line) => callback(line)
     ipcRenderer.on('download-log', listener)

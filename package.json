@@ -1,6 +1,6 @@
 {
   "name": "audio-video-youtube-downloader",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Audio/Video YouTube Downloader - download audio or video from YouTube with optional trimming, powered by yt-dlp and ffmpeg.",
   "main": "./out/main/index.js",
   "author": "EvroHQ",
@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.9",
     "framer-motion": "^11.3.19",
     "lucide-react": "^0.417.0"
   },
