@@ -15,7 +15,8 @@ import {
   Scissors,
   Terminal,
   ListOrdered,
-  Eraser
+  Eraser,
+  Coffee
 } from 'lucide-react'
 
 const spring = { type: 'spring', stiffness: 420, damping: 34 }
@@ -44,8 +45,48 @@ function isYouTubeUrl(value) {
   }
 }
 
+// Strip playlist/mix params (list, start_radio, index, ...) from a YouTube URL,
+// keeping only the single video. Returns the original value if there's nothing
+// to clean or it isn't a YouTube URL.
+function cleanYouTubeUrl(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return raw
+  const work = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+  try {
+    const u = new URL(work)
+    const host = u.hostname.toLowerCase().replace(/^www\./, '')
+    const allowed = [
+      'youtube.com',
+      'm.youtube.com',
+      'music.youtube.com',
+      'youtu.be',
+      'youtube-nocookie.com'
+    ]
+    if (!allowed.includes(host)) return raw
+    const hasPlaylist =
+      u.searchParams.has('list') ||
+      u.searchParams.has('start_radio') ||
+      u.searchParams.has('index')
+    if (!hasPlaylist) return raw
+    if (u.pathname === '/watch') {
+      const id = u.searchParams.get('v')
+      return id ? `https://www.youtube.com/watch?v=${id}` : raw
+    }
+    if (host === 'youtu.be') {
+      const id = u.pathname.slice(1)
+      return id ? `https://youtu.be/${id}` : raw
+    }
+    const m = u.pathname.match(/^\/(shorts|live|embed|v)\/([\w-]+)/)
+    if (m) return `https://www.youtube.com/${m[1]}/${m[2]}`
+    return raw
+  } catch {
+    return raw
+  }
+}
+
 export default function App() {
   const [url, setUrl] = useState('')
+  const [urlCleaned, setUrlCleaned] = useState(false)
   const [format, setFormat] = useState('audio')
   const [audioFormat, setAudioFormat] = useState('wav')
   const [videoQuality, setVideoQuality] = useState('1080')
@@ -142,10 +183,16 @@ export default function App() {
     return () => clearTimeout(t)
   }, [toast])
 
+  const applyUrl = (raw) => {
+    const cleaned = cleanYouTubeUrl(raw)
+    setUrl(cleaned)
+    setUrlCleaned(cleaned !== raw)
+  }
+
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText()
-      if (text) setUrl(text.trim())
+      if (text) applyUrl(text.trim())
     } catch (e) {
       setLogs((prev) => [...prev, `[--:--:--] Could not read clipboard: ${e.message}`])
     }
@@ -171,6 +218,7 @@ export default function App() {
       videoQuality,
       useRange,
       byChapters: byChapters && !useRange,
+      chapterCount: byChapters && !useRange ? chapters.length : undefined,
       start: start || '00:00:00',
       end: end || '00:00:00'
     })
@@ -285,7 +333,7 @@ export default function App() {
             <Link2 size={16} className="shrink-0 text-text-secondary" />
             <input
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => applyUrl(e.target.value)}
               placeholder="Paste a YouTube link…"
               className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
             />
@@ -319,6 +367,20 @@ export default function App() {
               Paste
             </button>
           </div>
+          <AnimatePresence initial={false}>
+            {urlCleaned && (
+              <motion.p
+                initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                animate={{ opacity: 1, height: 'auto', marginTop: 6 }}
+                exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                transition={{ duration: 0.2 }}
+                className="flex items-center gap-1.5 px-1 text-[11px] text-text-muted"
+              >
+                <Scissors size={11} className="text-accentMid" />
+                Playlist link detected — trimmed to the single video.
+              </motion.p>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Format segmented control */}
@@ -617,7 +679,7 @@ export default function App() {
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 items-center justify-center pt-3">
+        <div className="flex shrink-0 items-center justify-between pt-3">
           <p className="text-[11px] text-text-muted">
             made by{' '}
             <a
@@ -629,6 +691,15 @@ export default function App() {
               @EvroHQ
             </a>
           </p>
+          <a
+            href="https://buymeacoffee.com/evrohq"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-text-secondary transition-colors hover:border-accentMid/50 hover:text-text-primary"
+          >
+            <Coffee size={13} className="text-accentMid" />
+            Buy me a coffee
+          </a>
         </div>
       </div>
 

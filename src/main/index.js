@@ -2,6 +2,8 @@ import { app, shell, BrowserWindow, ipcMain, dialog, net } from 'electron'
 import { join } from 'path'
 import { existsSync, readdirSync, unlinkSync, mkdirSync, renameSync, createWriteStream } from 'fs'
 import { spawn } from 'child_process'
+import { randomUUID } from 'crypto'
+import os from 'os'
 import Store from 'electron-store'
 import { autoUpdater } from 'electron-updater'
 import appIcon from '../../resources/icon.ico?asset'
@@ -10,9 +12,16 @@ const YTDLP_LATEST_API = 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/la
 const YTDLP_DOWNLOAD_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
 const HTTP_USER_AGENT = 'AudioVideoYouTubeDownloader'
 
+// Anonymous, privacy-respecting usage telemetry (opt-out). These are the
+// project's PUBLIC keys — safe to embed. RLS allows INSERT only (no reads).
+const SUPABASE_URL = 'https://nbnqkbmrusijizwwgrtm.supabase.co'
+const SUPABASE_ANON_KEY = 'sb_publishable_Wam8TCU5ZS3ulQswN9eIRg_2IWrTEAQ'
+
 const store = new Store({
   defaults: {
-    outputFolder: ''
+    outputFolder: '',
+    telemetryEnabled: true,
+    installId: ''
   }
 })
 
@@ -179,6 +188,66 @@ function fetchText(url) {
     request.on('error', reject)
     request.end()
   })
+}
+
+// A persistent, random, anonymous identifier for this install (no personal
+// data). Generated once and stored locally so we can count unique installs.
+function getInstallId() {
+  let id = store.get('installId')
+  if (!id) {
+    id = randomUUID()
+    store.set('installId', id)
+  }
+  return id
+}
+
+// Extract the YouTube video id from a URL (watch?v=, youtu.be/, shorts/, ...).
+function extractYouTubeId(value) {
+  try {
+    let v = String(value == null ? '' : value).trim()
+    if (!v) return null
+    if (!/^https?:\/\//i.test(v)) v = `https://${v}`
+    const u = new URL(v)
+    const host = u.hostname.toLowerCase().replace(/^www\./, '')
+    if (host === 'youtu.be') return u.pathname.slice(1) || null
+    if (u.pathname === '/watch') return u.searchParams.get('v')
+    const m = u.pathname.match(/^\/(?:shorts|live|embed|v)\/([\w-]+)/)
+    return m ? m[1] : null
+  } catch (e) {
+    return null
+  }
+}
+
+// Fire-and-forget usage telemetry ping. Never throws and never blocks the app —
+// failures are silently ignored. `extra` carries per-event details.
+function sendTelemetry(event, extra = {}) {
+  try {
+    if (store.get('telemetryEnabled') === false) return
+    const payload = {
+      install_id: getInstallId(),
+      event,
+      app_version: app.getVersion(),
+      os: process.platform,
+      os_version: os.release(),
+      arch: process.arch,
+      locale: app.getLocale() || null,
+      ...extra
+    }
+    const request = net.request({ method: 'POST', url: `${SUPABASE_URL}/rest/v1/app_events` })
+    request.setHeader('apikey', SUPABASE_ANON_KEY)
+    request.setHeader('Authorization', `Bearer ${SUPABASE_ANON_KEY}`)
+    request.setHeader('Content-Type', 'application/json')
+    request.setHeader('Prefer', 'return=minimal')
+    request.on('response', (res) => {
+      res.on('data', () => {})
+      res.on('end', () => {})
+    })
+    request.on('error', () => {})
+    request.write(JSON.stringify(payload))
+    request.end()
+  } catch (e) {
+    // ignore — telemetry must never affect the app
+  }
 }
 
 // Download a URL to `dest`, streaming progress to the renderer. Writes to a
@@ -555,13 +624,14 @@ async function handleDownload(params) {
 
     // 1. download the full media once to a temp file
     if (format === 'audio') {
-      await runBinary(ytdlp, ['-f', '251', '-o', 'temp_%(id)s.%(ext)s', url], outputFolder)
+      await runBinary(ytdlp, ['-f', '251', '--no-playlist', '-o', 'temp_%(id)s.%(ext)s', url], outputFolder)
     } else {
       await runBinary(
         ytdlp,
         [
           '-f',
           videoSelector,
+          '--no-playlist',
           '--merge-output-format',
           'mp4',
           '--ffmpeg-location',
@@ -622,7 +692,7 @@ async function handleDownload(params) {
 
   if (format === 'audio' && !useRange) {
     // Direct audio extraction to the chosen format.
-    const args = ['-x', '--audio-format', audioFormat, '--ffmpeg-location', ffmpeg]
+    const args = ['-x', '--no-playlist', '--audio-format', audioFormat, '--ffmpeg-location', ffmpeg]
     if (audioFormat === 'mp3') {
       args.push('--audio-quality', '320K')
     } else {
@@ -637,7 +707,7 @@ async function handleDownload(params) {
 
   if (format === 'audio' && useRange) {
     // 1. download best audio stream to a temp file
-    await runBinary(ytdlp, ['-f', '251', '-o', 'temp_%(id)s.%(ext)s', url], outputFolder)
+    await runBinary(ytdlp, ['-f', '251', '--no-playlist', '-o', 'temp_%(id)s.%(ext)s', url], outputFolder)
     try {
       // 2. locate temp file
       const temp = findTempFile(outputFolder, ['.webm', '.m4a', '.opus'])
@@ -664,6 +734,7 @@ async function handleDownload(params) {
       [
         '-f',
         videoSelector,
+        '--no-playlist',
         '--ffmpeg-location',
         ffmpeg,
         '--merge-output-format',
@@ -686,6 +757,7 @@ async function handleDownload(params) {
       [
         '-f',
         videoSelector,
+        '--no-playlist',
         '--merge-output-format',
         'mp4',
         '--ffmpeg-location',
@@ -732,7 +804,8 @@ ipcMain.handle('select-folder', async () => {
 ipcMain.handle('get-config', () => {
   return {
     outputFolder: store.get('outputFolder') || app.getPath('downloads'),
-    version: app.getVersion()
+    version: app.getVersion(),
+    telemetryEnabled: store.get('telemetryEnabled') !== false
   }
 })
 
@@ -740,25 +813,40 @@ ipcMain.handle('set-config', (_event, cfg) => {
   if (cfg && typeof cfg.outputFolder === 'string') {
     store.set('outputFolder', cfg.outputFolder)
   }
+  if (cfg && typeof cfg.telemetryEnabled === 'boolean') {
+    store.set('telemetryEnabled', cfg.telemetryEnabled)
+  }
   return true
 })
 
 ipcMain.handle('start-download', async (_event, params) => {
   cancelRequested = false
+  const details = {
+    url: params?.url || null,
+    video_id: extractYouTubeId(params?.url),
+    format: params?.format || null,
+    quality: params?.format === 'audio' ? params?.audioFormat || null : params?.videoQuality || null,
+    trim: !!params?.useRange,
+    by_chapters: !!params?.byChapters,
+    chapter_count: Number.isFinite(params?.chapterCount) ? params.chapterCount : null
+  }
   try {
     sendLog(`Starting ${params.format} download...`)
     await handleDownload(params)
     sendLog('Download finished successfully.')
     sendComplete({ success: true, message: 'Download complete!' })
+    sendTelemetry('download', { ...details, success: true })
     return { success: true }
   } catch (err) {
     if (err.message === CANCELLED || cancelRequested) {
       sendLog('Download cancelled by user.')
       sendComplete({ success: false, cancelled: true, message: 'Download cancelled' })
+      sendTelemetry('download', { ...details, success: false, error: 'cancelled' })
       return { success: false, cancelled: true }
     }
     sendLog(`ERROR: ${err.message}`)
     sendComplete({ success: false, message: err.message })
+    sendTelemetry('download', { ...details, success: false, error: err.message })
     return { success: false, error: err.message }
   }
 })
@@ -903,6 +991,9 @@ app.whenReady().then(() => {
 
   // Check for an app update (electron-updater / GitHub Releases).
   setupAutoUpdater()
+
+  // Anonymous launch ping (opt-out). Fire-and-forget, never blocks startup.
+  sendTelemetry('launch')
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
