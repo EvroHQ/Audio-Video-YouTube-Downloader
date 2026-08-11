@@ -287,6 +287,54 @@ function safeStamp(value) {
   return secondsToStamp(secs).replace(/[:.]/g, '')
 }
 
+// Make an arbitrary string safe to use as a Windows file/folder name:
+// strip forbidden characters (<>:"/\|?*), control chars, collapse whitespace,
+// drop trailing dots/spaces, and cap the length.
+function sanitizeFilename(name, fallback = 'file') {
+  let s = String(name == null ? '' : name)
+  // eslint-disable-next-line no-control-regex
+  s = s.replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ')
+  s = s.replace(/\s+/g, ' ').trim()
+  s = s.replace(/[. ]+$/g, '')
+  if (!s) s = fallback
+  return s.slice(0, 120).trim() || fallback
+}
+
+// Ask yt-dlp (without downloading) for the video title and its chapter list.
+// Returns { title, chapters:[{start,end,title}] } — chapters is [] when none.
+async function fetchChapters(ytdlp, url) {
+  const out = await getProcessOutput(ytdlp, [
+    '--skip-download',
+    '--no-playlist',
+    '--no-warnings',
+    '--print',
+    '%(chapters)j',
+    '--print',
+    '%(title)s',
+    url
+  ])
+  if (!out) return { title: null, chapters: [] }
+  const lines = out.split(/\r?\n/)
+  const chaptersRaw = (lines[0] || '').trim()
+  const title = lines.slice(1).join(' ').trim() || null
+  let chapters = []
+  try {
+    const parsed = JSON.parse(chaptersRaw)
+    if (Array.isArray(parsed)) {
+      chapters = parsed
+        .map((c) => ({
+          start: Number(c.start_time),
+          end: c.end_time == null ? null : Number(c.end_time),
+          title: c.title ? String(c.title) : null
+        }))
+        .filter((c) => Number.isFinite(c.start))
+    }
+  } catch (e) {
+    chapters = []
+  }
+  return { title, chapters }
+}
+
 /**
  * Spawn a bundled binary and stream stdout/stderr line by line to the renderer.
  * Resolves with the process exit code.
@@ -409,6 +457,7 @@ function getMediaDuration(ffmpegPath, file) {
 // ---------------------------------------------------------------------------
 async function handleDownload(params) {
   const { url, format, useRange, start, end } = params
+  const byChapters = !!params.byChapters
 
   if (!isYouTubeUrl(url)) {
     throw new Error('Please paste a valid YouTube link (youtube.com or youtu.be).')
@@ -490,6 +539,85 @@ async function handleDownload(params) {
       return secondsToStamp(dur)
     }
     return endStamp
+  }
+
+  // Chapter split: download the full media ONCE, then slice each chapter into
+  // its own file with ffmpeg. Mutually exclusive with trim (guarded here + UI).
+  if (byChapters && !useRange) {
+    if (!existsSync(ffmpeg)) throw new Error('ffmpeg.exe is missing from the bundled resources.')
+    sendLog('Fetching chapter list...')
+    const { title, chapters } = await fetchChapters(ytdlp, url)
+    if (cancelRequested) throw new Error(CANCELLED)
+    if (!chapters.length) {
+      throw new Error('This video has no chapters to split.')
+    }
+    sendLog(`Found ${chapters.length} chapters. Downloading the full ${format} once...`)
+
+    // 1. download the full media once to a temp file
+    if (format === 'audio') {
+      await runBinary(ytdlp, ['-f', '251', '-o', 'temp_%(id)s.%(ext)s', url], outputFolder)
+    } else {
+      await runBinary(
+        ytdlp,
+        [
+          '-f',
+          videoSelector,
+          '--merge-output-format',
+          'mp4',
+          '--ffmpeg-location',
+          ffmpeg,
+          '-o',
+          'temp_%(id)s.%(ext)s',
+          url
+        ],
+        outputFolder
+      )
+    }
+
+    try {
+      const temp = findTempFile(
+        outputFolder,
+        format === 'audio' ? ['.webm', '.m4a', '.opus'] : ['.mp4', '.mkv', '.webm']
+      )
+      if (!temp) throw new Error('Could not locate the downloaded temp file.')
+      const dur = await getMediaDuration(ffmpeg, temp)
+
+      const destDir = join(outputFolder, sanitizeFilename(title, 'chapters'))
+      mkdirSync(destDir, { recursive: true })
+
+      const ext = format === 'audio' ? audioExt : 'mp4'
+      const encodeArgs = format === 'audio' ? audioEncodeArgs : ['-c', 'copy']
+      const width = String(chapters.length).length
+
+      for (let i = 0; i < chapters.length; i++) {
+        if (cancelRequested) throw new Error(CANCELLED)
+        const ch = chapters[i]
+        const startS = ch.start
+        let endS = ch.end
+        if (endS == null || !(endS > startS)) {
+          endS = i + 1 < chapters.length ? chapters[i + 1].start : dur != null ? dur : startS
+        }
+        if (dur != null && endS > dur) endS = dur
+        if (!(endS > startS)) continue
+
+        const num = String(i + 1).padStart(width, '0')
+        const chTitle = sanitizeFilename(ch.title, `Chapter ${i + 1}`)
+        const outName = join(destDir, `${num} - ${chTitle}.${ext}`)
+        const pct = Math.round(((i + 1) / chapters.length) * 100)
+        sendLog(
+          `Splitting chapter ${i + 1}/${chapters.length}: ${ch.title || `Chapter ${i + 1}`} (${pct}%)`
+        )
+        await runBinary(
+          ffmpeg,
+          ['-y', '-i', temp, '-ss', secondsToStamp(startS), '-to', secondsToStamp(endS), ...encodeArgs, outName],
+          outputFolder
+        )
+      }
+      sendLog(`Saved ${chapters.length} chapter files to: ${destDir}`)
+    } finally {
+      cleanupTempFiles(outputFolder)
+    }
+    return
   }
 
   if (format === 'audio' && !useRange) {
@@ -644,6 +772,19 @@ ipcMain.handle('cancel-download', () => {
   return true
 })
 
+// Fetch the video's chapter list (without downloading) so the renderer can
+// offer a "split by chapters" option only when chapters actually exist.
+ipcMain.handle('get-chapters', async (_event, url) => {
+  try {
+    if (!isYouTubeUrl(url)) return { title: null, chapters: [] }
+    const ytdlp = getBinPath('yt-dlp.exe')
+    if (!existsSync(ytdlp)) return { title: null, chapters: [] }
+    return await fetchChapters(ytdlp, url)
+  } catch (e) {
+    return { title: null, chapters: [], error: e.message }
+  }
+})
+
 // Compare the bundled/updated yt-dlp version against the latest GitHub release.
 ipcMain.handle('check-ytdlp-update', async () => {
   try {
@@ -711,9 +852,10 @@ function setupAutoUpdater() {
   autoUpdater.autoDownload = app.isPackaged
   autoUpdater.autoInstallOnAppQuit = true
 
+  // Everything below is silent — the only user-visible signal is the banner,
+  // which appears only when an update is actually available/downloaded.
   autoUpdater.on('update-available', (info) => {
     sendAppUpdate({ status: 'available', version: info?.version })
-    sendLog(`App update available: v${info?.version}. Downloading in the background...`)
   })
   autoUpdater.on('update-not-available', () => {
     sendAppUpdate({ status: 'none' })
@@ -723,18 +865,9 @@ function setupAutoUpdater() {
   })
   autoUpdater.on('update-downloaded', (info) => {
     sendAppUpdate({ status: 'downloaded', version: info?.version })
-    sendLog(`App update v${info?.version} ready. Restart to install.`)
   })
-  autoUpdater.on('error', (err) => {
-    const msg = err == null ? '' : err.message || String(err)
-    // A missing latest.yml / 404 / no-release simply means no proper release
-    // has been published yet — a normal state, not a real error. Keep the log
-    // clean (and free of the word "error" so the UI doesn't paint it red).
-    if (/latest\.yml|404|No published|ENOTFOUND|ETIMEDOUT|net::|getaddrinfo/i.test(msg)) {
-      sendLog('Update check: app is up to date.')
-    } else {
-      sendLog(`Update check could not complete (${msg}).`)
-    }
+  autoUpdater.on('error', () => {
+    // Silently ignore (no network / no release yet / etc.).
   })
 
   autoUpdater.checkForUpdates().catch(() => {

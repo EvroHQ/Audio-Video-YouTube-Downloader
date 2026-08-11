@@ -13,7 +13,9 @@ import {
   ArrowUpCircle,
   Link2,
   Scissors,
-  Terminal
+  Terminal,
+  ListOrdered,
+  Eraser
 } from 'lucide-react'
 
 const spring = { type: 'spring', stiffness: 420, damping: 34 }
@@ -50,6 +52,9 @@ export default function App() {
   const [useRange, setUseRange] = useState(false)
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
+  const [chapters, setChapters] = useState([])
+  const [checkingChapters, setCheckingChapters] = useState(false)
+  const [byChapters, setByChapters] = useState(false)
   const [outputFolder, setOutputFolder] = useState('')
   const [version, setVersion] = useState('')
   const [downloading, setDownloading] = useState(false)
@@ -62,6 +67,7 @@ export default function App() {
   const [appUpdate, setAppUpdate] = useState(null)
 
   const logRef = useRef(null)
+  const chapterReq = useRef(0)
 
   const urlValid = useMemo(() => (url.trim() ? isYouTubeUrl(url) : null), [url])
 
@@ -99,6 +105,32 @@ export default function App() {
       offAppUpdate && offAppUpdate()
     }
   }, [])
+
+  // Detect chapters whenever a valid URL is entered (debounced). Reset when the
+  // URL changes or becomes invalid.
+  useEffect(() => {
+    setChapters([])
+    setByChapters(false)
+    if (urlValid !== true) {
+      setCheckingChapters(false)
+      return
+    }
+    const reqId = ++chapterReq.current
+    setCheckingChapters(true)
+    const t = setTimeout(async () => {
+      const res = await window.api?.getChapters(url.trim())
+      if (chapterReq.current !== reqId) return
+      setCheckingChapters(false)
+      setChapters(Array.isArray(res?.chapters) ? res.chapters : [])
+    }, 600)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, urlValid])
+
+  // Trim and chapter-split are mutually exclusive.
+  useEffect(() => {
+    if (useRange) setByChapters(false)
+  }, [useRange])
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
@@ -138,6 +170,7 @@ export default function App() {
       audioFormat,
       videoQuality,
       useRange,
+      byChapters: byChapters && !useRange,
       start: start || '00:00:00',
       end: end || '00:00:00'
     })
@@ -162,6 +195,11 @@ export default function App() {
 
   const handleInstallApp = async () => {
     await window.api?.installUpdate()
+  }
+
+  const handleClearLogs = () => {
+    setLogs([])
+    setProgress(0)
   }
 
   const urlRing =
@@ -362,11 +400,61 @@ export default function App() {
           )}
         </div>
 
+        {/* Chapters option (only when the video has chapters and trim is off) */}
+        <AnimatePresence initial={false}>
+          {!useRange && (checkingChapters || chapters.length > 0) && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+              animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
+              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+              transition={{ duration: 0.22, ease: 'easeInOut' }}
+              className="shrink-0 overflow-hidden"
+            >
+              {chapters.length > 0 ? (
+                <button
+                  onClick={() => setByChapters((v) => !v)}
+                  className="glass-soft flex w-full items-center justify-between rounded-2xl px-4 py-2.5 text-left transition-colors hover:border-white/10"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <ListOrdered size={15} className="text-text-secondary" />
+                    <span>
+                      <span className="block text-sm font-medium">Split by chapters</span>
+                      <span className="block text-[11px] text-text-secondary">
+                        {chapters.length} chapters · one file each
+                      </span>
+                    </span>
+                  </span>
+                  <span
+                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                      byChapters ? 'bg-accent-gradient' : 'bg-white/10'
+                    }`}
+                  >
+                    <motion.span
+                      layout
+                      transition={spring}
+                      className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow"
+                      style={{ left: byChapters ? '18px' : '2px' }}
+                    />
+                  </span>
+                </button>
+              ) : (
+                <div className="glass-soft flex items-center gap-2.5 rounded-2xl px-4 py-2.5 text-sm font-medium text-text-secondary">
+                  <Loader2 size={15} className="animate-spin text-text-secondary" />
+                  Checking for chapters…
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Range toggle */}
         <div className="mb-4 shrink-0">
           <button
-            onClick={() => setUseRange((v) => !v)}
-            className="glass-soft flex w-full items-center justify-between rounded-2xl px-4 py-2.5 text-left transition-colors hover:border-white/10"
+            onClick={() => !byChapters && setUseRange((v) => !v)}
+            disabled={byChapters}
+            className={`glass-soft flex w-full items-center justify-between rounded-2xl px-4 py-2.5 text-left transition-colors hover:border-white/10 ${
+              byChapters ? 'cursor-not-allowed opacity-40' : ''
+            }`}
           >
             <span className="flex items-center gap-2.5 text-sm font-medium">
               <Scissors size={15} className="text-text-secondary" />
@@ -489,16 +577,35 @@ export default function App() {
 
         {/* Log console */}
         <div className="flex min-h-[130px] flex-1 flex-col overflow-hidden rounded-2xl glass-soft">
-          <div className="flex items-center gap-2 border-b border-white/5 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-            <Terminal size={12} />
-            Console
+          <div className="flex items-center justify-between border-b border-white/5 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+            <span className="flex items-center gap-2">
+              <Terminal size={12} />
+              Console
+            </span>
+            <button
+              onClick={handleClearLogs}
+              disabled={downloading || logs.length === 0}
+              title="Clear console"
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium tracking-normal transition-colors ${
+                downloading || logs.length === 0
+                  ? 'cursor-not-allowed text-text-muted/50'
+                  : 'text-text-secondary hover:bg-white/5 hover:text-text-primary'
+              }`}
+            >
+              <Eraser size={12} />
+              Clear
+            </button>
           </div>
           <div
             ref={logRef}
             className="log-scroll flex-1 overflow-y-auto px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed"
           >
             {logs.length === 0 ? (
-              <span className="text-text-muted">Waiting for a link…</span>
+              <span className="text-text-muted">
+                {urlValid === true
+                  ? 'Ready — press Download to start.'
+                  : 'Waiting for a link…'}
+              </span>
             ) : (
               logs.map((line, i) => (
                 <div key={i} className={/error/i.test(line) ? 'text-error' : 'text-success/90'}>

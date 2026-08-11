@@ -6,6 +6,7 @@ const api = {
   setConfig: (cfg) => ipcRenderer.invoke('set-config', cfg),
   startDownload: (params) => ipcRenderer.invoke('start-download', params),
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
+  getChapters: (url) => ipcRenderer.invoke('get-chapters', url),
   checkYtdlpUpdate: () => ipcRenderer.invoke('check-ytdlp-update'),
   updateYtdlp: () => ipcRenderer.invoke('update-ytdlp'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
