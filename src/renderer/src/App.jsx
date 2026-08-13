@@ -18,6 +18,7 @@ import {
   Eraser,
   Coffee
 } from 'lucide-react'
+import logo from './assets/logo.png'
 
 const spring = { type: 'spring', stiffness: 420, damping: 34 }
 
@@ -277,16 +278,12 @@ export default function App() {
             transition={{ type: 'spring', stiffness: 240, damping: 16 }}
             className="relative h-[52px] w-[52px] shrink-0"
           >
-            <div
-              className="relative flex h-[52px] w-[52px] items-center justify-center overflow-hidden rounded-2xl shadow-glow ring-1 ring-white/15 bg-accent-gradient animate-gradient-pan"
-              style={{ backgroundSize: '200% 200%' }}
-            >
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/35 to-transparent"
-              />
-              <Download size={24} strokeWidth={2.6} className="relative text-white" />
-            </div>
+            <img
+              src={logo}
+              alt="YouTube Downloader"
+              draggable={false}
+              className="h-[52px] w-[52px] rounded-2xl shadow-glow ring-1 ring-white/15 select-none"
+            />
           </motion.div>
           <div>
             <h1 className="text-[22px] font-extrabold leading-none tracking-tight">

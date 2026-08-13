@@ -111,7 +111,16 @@ npm run build:win
 
 ## Icon
 
-`resources/icon.ico` is generated from a 256×256 PNG via `scripts/make-ico.cjs`. Replace it to rebrand.
+The master icon is the vector file `resources/audio-video-downloader-icon.svg`.
+To regenerate the multi-resolution `resources/icon.ico` (16→256 px) after editing it:
+
+```bash
+node scripts/make-icon.cjs
+```
+
+This uses `sharp` (a devDependency) to rasterize each size from the SVG and pack a
+PNG-compressed `.ico`. It also writes `resources/icon-256.png` (also copied to
+`src/renderer/src/assets/logo.png` for the in-app header).
 
 ## Project structure
 
