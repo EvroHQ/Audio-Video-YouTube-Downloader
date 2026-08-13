@@ -39,9 +39,10 @@ jobs:
         shell: pwsh
         run: |
           npm run build
-          npx electron-builder --win
+          npx electron-builder --win --publish never
 
       - name: Report sizes + effective config
+        if: always()
         shell: pwsh
         run: |
           Write-Host "=== installers ==="
