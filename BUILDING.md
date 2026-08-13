@@ -43,12 +43,23 @@ They are git-ignored (large) and bundled into the package via electron-builder's
 
 With the essentials ffmpeg, `compression: maximum`, and the `node_modules` file filters in `electron-builder.yml`, the packaged output in `release/` is roughly:
 
-| Artifact | Full-build ffmpeg (before) | Essentials + optimizations (after) |
+| Artifact | Before | After |
 | --- | --- | --- |
-| NSIS installer (`*-Setup-*.exe`) | ~230 MB | **~166 MB** |
-| Portable (`*-Portable-*.exe`) | ~230 MB | **~166 MB** |
+| NSIS installer (`*-Setup-*.exe`) | ~230–350 MB | **~120 MB** |
+| Portable (`*-Portable-*.exe`) | ~230–350 MB | **~120 MB** |
+| Installed on disk (`win-unpacked`) | ~500–790 MB | **~376 MB** |
 
-The bulk is the two binaries; `ffmpeg.exe` (~98 MB) and `yt-dlp.exe` (~17 MB) dominate and don't compress much further, which is why the installer stays in the ~165 MB range even at maximum compression.
+Two things dominate and both were fixed:
+
+1. **ffmpeg**: use the essentials build (`ffmpeg.exe` ~98 MB) instead of full (~230 MB).
+2. **Don't pack scratch files into `app.asar`**: the CI workflow extracts ffmpeg into
+   `ffmpeg_tmp/` (which also contains ffprobe/ffplay/docs) and downloads `ffmpeg.zip`.
+   These live in the project root, so if they aren't deleted before packaging,
+   electron-builder sweeps them into `app.asar` and the installer balloons to ~310 MB.
+   The workflow removes them right after copying `ffmpeg.exe`, and `electron-builder.yml`
+   excludes them as defense-in-depth.
+
+`ffmpeg.exe` (~98 MB) and `yt-dlp.exe` (~17 MB) don't compress much further, so ~120 MB is about the floor.
 
 ## Run in development
 
