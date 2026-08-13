@@ -19,13 +19,16 @@ files:
   - '!**/node_modules/*/{test,tests,__tests__,spec,docs,documentation,example,examples,demo}/**'
   - '!**/node_modules/*/{CHANGELOG.md,README.md,LICENSE,license,.eslintrc*,.prettierrc*}'
   - '!**/node_modules/**/*.{ts,map}'
-asarUnpack:
-  - resources/**
+  # Do NOT pack the source resources/ dir into app.asar. The binaries are shipped
+  # via extraResources below (and read from process.resourcesPath/bin at runtime);
+  # the window icon is inlined into out/ by electron-vite's ?asset import. Packing
+  # resources/ here previously produced a redundant ~115 MB second copy of the exes.
+  - '!resources/**'
 extraResources:
   - from: resources/bin
     to: bin
     filter:
-      - '**/*'
+      - '*.exe'
 win:
   target:
     - nsis
