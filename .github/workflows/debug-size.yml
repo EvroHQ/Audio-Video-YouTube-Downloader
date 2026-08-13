@@ -13,7 +13,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -40,6 +40,20 @@ jobs:
         run: |
           npm run build
           npx electron-builder --win --publish never
+
+      - name: Diagnose node_modules
+        if: always()
+        shell: pwsh
+        run: |
+          "hidden lockfile present: {0}" -f (Test-Path node_modules/.package-lock.json)
+          $nm = Get-ChildItem node_modules -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum
+          "node_modules total: {0:N1} MB" -f ($nm.Sum/1MB)
+          if (Test-Path node_modules/electron) {
+            $el = Get-ChildItem node_modules/electron -Recurse -File | Measure-Object -Property Length -Sum
+            "node_modules/electron: {0:N1} MB" -f ($el.Sum/1MB)
+          }
+          Write-Host "=== npm ls --omit=dev (prod tree, top level) ==="
+          npm ls --omit=dev 2>&1 | Select-Object -First 25
 
       - name: Report sizes + effective config
         if: always()
