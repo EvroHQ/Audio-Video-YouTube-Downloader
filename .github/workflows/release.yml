@@ -28,18 +28,28 @@ jobs:
 
       - name: Fetch yt-dlp + ffmpeg binaries
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path resources/bin | Out-Null
 
-          Write-Host "Downloading yt-dlp..."
+          Write-Host "Downloading yt-dlp (standalone PyInstaller .exe)..."
+          # The standalone .exe bundles Python and runs on any machine. Do NOT use the
+          # ~3 MB "yt-dlp" zipapp - it needs Python installed and would break for users.
           Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "resources/bin/yt-dlp.exe"
 
-          Write-Host "Downloading ffmpeg (gyan.dev essentials build - smaller)..."
-          # Use the "essentials" build, NOT "full": ~130 MB smaller ffmpeg.exe while
-          # still shipping every encoder the app needs (libmp3lame, pcm_s16le, aac,
-          # libx264/libx265). Only ffmpeg.exe is bundled - never ffprobe/ffplay.
-          $ffmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-          Invoke-WebRequest -Uri $ffmpegUrl -OutFile "ffmpeg.zip"
+          Write-Host "Downloading ffmpeg (gyan.dev 'essentials' build via GitHub mirror)..."
+          # Use the "essentials" build, NOT "full": ~130 MB smaller ffmpeg.exe while still
+          # shipping every encoder the app needs (libmp3lame, pcm_s16le, aac, libx264/x265).
+          # gyan.dev's own host is rate-limited (503 in CI), so pull the IDENTICAL build
+          # from Gyan's official GitHub release mirror. Only ffmpeg.exe is bundled.
+          $apiHeaders = @{ 'User-Agent' = 'github-actions'; 'Authorization' = "Bearer $env:GH_TOKEN" }
+          $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/GyanD/codexffmpeg/releases/latest' -Headers $apiHeaders
+          $asset = $rel.assets | Where-Object { $_.name -like '*essentials_build.zip' } | Select-Object -First 1
+          if (-not $asset) { throw 'Could not find *essentials_build.zip on GyanD/codexffmpeg latest release' }
+          Write-Host "ffmpeg asset: $($asset.name) ($([math]::Round($asset.size/1MB,1)) MB)"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "ffmpeg.zip"
           Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg_tmp" -Force
           $exe = Get-ChildItem -Path "ffmpeg_tmp" -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
           Copy-Item $exe.FullName -Destination "resources/bin/ffmpeg.exe" -Force
