@@ -38,8 +38,11 @@ jobs:
       - name: Build (no publish)
         shell: pwsh
         run: |
+          $ev = node -p "require('electron/package.json').version"
+          Write-Host "electron version: $ev"
           npm run build
-          npx electron-builder --win --publish never
+          npm prune --omit=dev
+          npx --yes electron-builder@24.13.3 --win --publish never --config.electronVersion=$ev
 
       - name: Diagnose node_modules
         if: always()
