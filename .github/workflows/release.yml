@@ -34,8 +34,11 @@ jobs:
           Write-Host "Downloading yt-dlp..."
           Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "resources/bin/yt-dlp.exe"
 
-          Write-Host "Downloading ffmpeg..."
-          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip"
+          Write-Host "Downloading ffmpeg (gyan.dev essentials build - smaller)..."
+          # Use the "essentials" build, NOT "full": ~130 MB smaller ffmpeg.exe while
+          # still shipping every encoder the app needs (libmp3lame, pcm_s16le, aac,
+          # libx264/libx265). Only ffmpeg.exe is bundled - never ffprobe/ffplay.
+          $ffmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
           Invoke-WebRequest -Uri $ffmpegUrl -OutFile "ffmpeg.zip"
           Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg_tmp" -Force
           $exe = Get-ChildItem -Path "ffmpeg_tmp" -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1

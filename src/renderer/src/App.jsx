@@ -686,6 +686,7 @@ export default function App() {
               href="https://github.com/EvroHQ"
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => window.api.trackLink('madeby')}
               className="bg-accent-gradient bg-clip-text font-semibold text-transparent"
             >
               @EvroHQ
@@ -695,6 +696,7 @@ export default function App() {
             href="https://buymeacoffee.com/evrohq"
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => window.api.trackLink('coffee')}
             className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-text-secondary transition-colors hover:border-accentMid/50 hover:text-text-primary"
           >
             <Coffee size={13} className="text-accentMid" />

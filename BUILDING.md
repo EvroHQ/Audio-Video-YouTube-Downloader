@@ -19,11 +19,36 @@ The app runs `yt-dlp.exe` and `ffmpeg.exe` as bundled binaries. Put both in `res
 
 ```
 resources/bin/
-  yt-dlp.exe    # https://github.com/yt-dlp/yt-dlp/releases  (the "yt-dlp.exe" file)
+  yt-dlp.exe    # https://github.com/yt-dlp/yt-dlp/releases/latest  (the "yt-dlp.exe" file)
   ffmpeg.exe    # https://www.gyan.dev/ffmpeg/builds/  (ffmpeg-release-essentials.zip -> bin/ffmpeg.exe)
 ```
 
 They are git-ignored (large) and bundled into the package via electron-builder's `extraResources`.
+
+### ffmpeg — use the **essentials** build (not full)
+
+- Download **`ffmpeg-release-essentials.zip`** from https://www.gyan.dev/ffmpeg/builds/ — **do NOT** use `ffmpeg-release-full.zip`. The full build is ~2.3× larger and ships codecs the app never uses.
+- Extract **only `bin/ffmpeg.exe`** from the zip. **Do not** include `ffprobe.exe` or `ffplay.exe` — the app never calls them (media duration is parsed from `ffmpeg -i` output).
+- The essentials build still contains every encoder the app needs: `libmp3lame` (MP3), `pcm_s16le` (WAV), `aac`, and `libx264`/`libx265` (MP4 video).
+- Expected size: **`ffmpeg.exe` ≈ 80–100 MB** (essentials). The full build is ~230 MB.
+
+### yt-dlp — use the standalone **`.exe`** (not the 3 MB zipapp)
+
+- Download the file literally named **`yt-dlp.exe`** from https://github.com/yt-dlp/yt-dlp/releases/latest. This is the PyInstaller build (**~17 MB**); it bundles its own Python and runs standalone on any Windows machine.
+- **Do NOT** use the ~3 MB file named `yt-dlp` (no extension). That is a Python *zipapp* and requires Python to be installed on the end user's machine — it will fail for users who don't have Python. The 17 MB standalone exe is intentional: reliability over size.
+- The in-app updater also pulls this same standalone `yt-dlp.exe`, so keep the builds consistent.
+- Expected size: **`yt-dlp.exe` ≈ 16–18 MB**.
+
+### Expected packaged size (after optimizations)
+
+With the essentials ffmpeg, `compression: maximum`, and the `node_modules` file filters in `electron-builder.yml`, the packaged output in `release/` is roughly:
+
+| Artifact | Full-build ffmpeg (before) | Essentials + optimizations (after) |
+| --- | --- | --- |
+| NSIS installer (`*-Setup-*.exe`) | ~230 MB | **~166 MB** |
+| Portable (`*-Portable-*.exe`) | ~230 MB | **~166 MB** |
+
+The bulk is the two binaries; `ffmpeg.exe` (~98 MB) and `yt-dlp.exe` (~17 MB) dominate and don't compress much further, which is why the installer stays in the ~165 MB range even at maximum compression.
 
 ## Run in development
 

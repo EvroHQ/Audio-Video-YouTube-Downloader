@@ -10,6 +10,7 @@ const api = {
   checkYtdlpUpdate: () => ipcRenderer.invoke('check-ytdlp-update'),
   updateYtdlp: () => ipcRenderer.invoke('update-ytdlp'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
+  trackLink: (which) => ipcRenderer.invoke('track-link', which),
   onAppUpdate: (callback) => {
     const listener = (_event, payload) => callback(payload)
     ipcRenderer.on('app-update', listener)

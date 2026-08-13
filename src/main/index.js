@@ -819,6 +819,13 @@ ipcMain.handle('set-config', (_event, cfg) => {
   return true
 })
 
+ipcMain.handle('track-link', (_event, which) => {
+  if (which === 'madeby' || which === 'coffee') {
+    sendTelemetry('link_click', { link: which })
+  }
+  return true
+})
+
 ipcMain.handle('start-download', async (_event, params) => {
   cancelRequested = false
   const details = {
