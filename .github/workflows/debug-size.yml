@@ -34,15 +34,13 @@ jobs:
           Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg_tmp" -Force
           $exe = Get-ChildItem -Path "ffmpeg_tmp" -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
           Copy-Item $exe.FullName -Destination "resources/bin/ffmpeg.exe" -Force
+          Remove-Item "ffmpeg.zip","ffmpeg_tmp" -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Build (no publish)
         shell: pwsh
         run: |
-          $ev = node -p "require('electron/package.json').version"
-          Write-Host "electron version: $ev"
           npm run build
-          npm prune --omit=dev
-          npx --yes electron-builder@24.13.3 --win --publish never --config.electronVersion=$ev
+          npx electron-builder --win --publish never
 
       - name: Diagnose node_modules
         if: always()
