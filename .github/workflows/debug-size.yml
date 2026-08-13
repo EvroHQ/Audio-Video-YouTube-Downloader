@@ -1,0 +1,55 @@
+name: Debug build size (manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch yt-dlp + ffmpeg binaries
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path resources/bin | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "resources/bin/yt-dlp.exe"
+          $apiHeaders = @{ 'User-Agent' = 'github-actions'; 'Authorization' = "Bearer $env:GH_TOKEN" }
+          $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/GyanD/codexffmpeg/releases/latest' -Headers $apiHeaders
+          $asset = $rel.assets | Where-Object { $_.name -like '*essentials_build.zip' } | Select-Object -First 1
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "ffmpeg.zip"
+          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg_tmp" -Force
+          $exe = Get-ChildItem -Path "ffmpeg_tmp" -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+          Copy-Item $exe.FullName -Destination "resources/bin/ffmpeg.exe" -Force
+
+      - name: Build (no publish)
+        shell: pwsh
+        run: |
+          npm run build
+          npx electron-builder --win
+
+      - name: Report sizes + effective config
+        shell: pwsh
+        run: |
+          Write-Host "=== installers ==="
+          Get-ChildItem release -Filter *.exe | ForEach-Object { "{0,-52} {1,8:N1} MB" -f $_.Name, ($_.Length/1MB) }
+          Write-Host "=== win-unpacked total ==="
+          $u = Get-ChildItem release/win-unpacked -Recurse -File | Measure-Object -Property Length -Sum
+          "win-unpacked: {0:N1} MB across {1} files" -f ($u.Sum/1MB), $u.Count
+          Write-Host "=== biggest files ==="
+          Get-ChildItem release/win-unpacked -Recurse -File | Sort-Object Length -Descending | Select-Object -First 12 | ForEach-Object { "{0,8:N1} MB  {1}" -f ($_.Length/1MB), $_.FullName }
+          Write-Host "=== effective config ==="
+          if (Test-Path release/builder-effective-config.yaml) { Get-Content release/builder-effective-config.yaml }
