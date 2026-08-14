@@ -8,8 +8,15 @@ import Store from 'electron-store'
 import { autoUpdater } from 'electron-updater'
 import appIcon from '../../resources/icon.ico?asset'
 
-const YTDLP_LATEST_API = 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest'
-const YTDLP_DOWNLOAD_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+// Track yt-dlp's NIGHTLY channel, not stable. YouTube breaks extraction
+// frequently (JS challenges, PO Token / SABR 403s) and the nightly builds ship
+// the fixes weeks before they land in a stable release — the stable channel was
+// a month behind and already 403'd on many videos. Nightly is the same code as
+// master, just built daily, and is what yt-dlp recommends when YouTube changes.
+const YTDLP_LATEST_API =
+  'https://api.github.com/repos/yt-dlp/yt-dlp-nightly-builds/releases/latest'
+const YTDLP_DOWNLOAD_URL =
+  'https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe'
 const HTTP_USER_AGENT = 'AudioVideoYouTubeDownloader'
 
 // Anonymous, privacy-respecting usage telemetry (opt-out). These are the

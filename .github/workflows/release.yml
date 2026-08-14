@@ -34,10 +34,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path resources/bin | Out-Null
 
-          Write-Host "Downloading yt-dlp (standalone PyInstaller .exe)..."
-          # The standalone .exe bundles Python and runs on any machine. Do NOT use the
-          # ~3 MB "yt-dlp" zipapp - it needs Python installed and would break for users.
-          Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "resources/bin/yt-dlp.exe"
+          Write-Host "Downloading yt-dlp NIGHTLY (standalone PyInstaller .exe)..."
+          # Track the NIGHTLY channel, not stable: YouTube breaks extraction often
+          # (JS challenges, PO Token / SABR 403s) and nightly ships the fixes weeks
+          # before stable. The stable channel was a month behind and 403'd on many
+          # videos; nightly is the same code as master, just built daily. The in-app
+          # updater (src/main/index.js) also tracks nightly, so keep them consistent.
+          # Use the standalone .exe (bundles Python); do NOT use the ~3 MB zipapp.
+          Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe" -OutFile "resources/bin/yt-dlp.exe"
 
           Write-Host "Downloading ffmpeg (gyan.dev 'essentials' build via GitHub mirror)..."
           # Use the "essentials" build, NOT "full": ~130 MB smaller ffmpeg.exe while still

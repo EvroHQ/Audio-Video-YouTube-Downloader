@@ -40,11 +40,11 @@ They are git-ignored and bundled into the package via electron-builder's `extraR
 - The essentials build still contains every encoder the app needs: `libmp3lame` (MP3), `pcm_s16le` (WAV), `aac`, and `libx264`/`libx265` (MP4 video).
 - Expected size: **`ffmpeg.exe` ≈ 80–100 MB** (essentials). The full build is ~230 MB.
 
-### yt-dlp — use the standalone **`.exe`** (not the 3 MB zipapp)
+### yt-dlp — use the **nightly** standalone `.exe` (not the 3 MB zipapp)
 
-- Download the file literally named **`yt-dlp.exe`** from https://github.com/yt-dlp/yt-dlp/releases/latest. This is the PyInstaller build (**~17 MB**); it bundles its own Python and runs standalone on any Windows machine.
+- Download the file literally named **`yt-dlp.exe`** from the **nightly** channel: https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest. This is the PyInstaller build (**~17 MB**); it bundles its own Python and runs standalone on any Windows machine.
+- **Why nightly, not stable?** YouTube breaks extraction frequently (JS challenges, and the PO Token / SABR `HTTP Error 403` on many videos). Nightly ships the fixes weeks before they reach a stable release — the stable channel was a month behind and already 403'd on lots of videos. Nightly is the same code as `master`, just built daily, and is what yt-dlp recommends when YouTube changes. The in-app updater (`src/main/index.js`) tracks the nightly channel too, so keep them consistent.
 - **Do NOT** use the ~3 MB file named `yt-dlp` (no extension). That is a Python *zipapp* and requires Python to be installed on the end user's machine — it will fail for users who don't have Python. The 17 MB standalone exe is intentional: reliability over size.
-- The in-app updater also pulls this same standalone `yt-dlp.exe`, so keep the builds consistent.
 - Expected size: **`yt-dlp.exe` ≈ 16–18 MB**.
 
 ### Expected packaged size (after optimizations)
