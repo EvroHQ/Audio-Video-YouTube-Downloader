@@ -105,6 +105,18 @@ function getBinPath(name) {
   return getBundledBinPath(name)
 }
 
+/**
+ * YouTube now requires solving a JavaScript challenge, which yt-dlp can only do
+ * with an external JS runtime (Deno/Node/QuickJS). End-user machines have none,
+ * so we bundle QuickJS (qjs.exe) and point yt-dlp at it. Without this, yt-dlp
+ * exits with code 1 for most videos. qjs is always the bundled copy (never a
+ * user-updated yt-dlp's neighbour), so resolve it from the bundled bin dir.
+ */
+function getJsRuntimeArgs() {
+  const qjs = getBundledBinPath('qjs.exe')
+  return existsSync(qjs) ? ['--js-runtimes', `quickjs:${qjs}`] : []
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
@@ -373,6 +385,7 @@ function sanitizeFilename(name, fallback = 'file') {
 // Returns { title, chapters:[{start,end,title}] } — chapters is [] when none.
 async function fetchChapters(ytdlp, url) {
   const out = await getProcessOutput(ytdlp, [
+    ...getJsRuntimeArgs(),
     '--skip-download',
     '--no-playlist',
     '--no-warnings',
@@ -537,11 +550,16 @@ async function handleDownload(params) {
     : '1080'
   const ytdlp = getBinPath('yt-dlp.exe')
   const ffmpeg = getBinPath('ffmpeg.exe')
+  // Prepended to every yt-dlp call so it can solve YouTube's JS challenge.
+  const jsArgs = getJsRuntimeArgs()
 
   const outputFolder = store.get('outputFolder') || app.getPath('downloads')
 
   if (!existsSync(ytdlp)) {
-    throw new Error('yt-dlp.exe is missing from the bundled resources. The build is incomplete.')
+    throw new Error(
+      'yt-dlp.exe could not be found. If you have antivirus software, it may have ' +
+        'quarantined it (a common false positive) — restore/allow the file, or reinstall the app.'
+    )
   }
 
   // Max height per selected quality (yt-dlp picks the best available up to it).
@@ -624,11 +642,12 @@ async function handleDownload(params) {
 
     // 1. download the full media once to a temp file
     if (format === 'audio') {
-      await runBinary(ytdlp, ['-f', '251', '--no-playlist', '-o', 'temp_%(id)s.%(ext)s', url], outputFolder)
+      await runBinary(ytdlp, [...jsArgs, '-f', '251', '--no-playlist', '-o', 'temp_%(id)s.%(ext)s', url], outputFolder)
     } else {
       await runBinary(
         ytdlp,
         [
+          ...jsArgs,
           '-f',
           videoSelector,
           '--no-playlist',
@@ -692,7 +711,7 @@ async function handleDownload(params) {
 
   if (format === 'audio' && !useRange) {
     // Direct audio extraction to the chosen format.
-    const args = ['-x', '--no-playlist', '--audio-format', audioFormat, '--ffmpeg-location', ffmpeg]
+    const args = [...jsArgs, '-x', '--no-playlist', '--audio-format', audioFormat, '--ffmpeg-location', ffmpeg]
     if (audioFormat === 'mp3') {
       args.push('--audio-quality', '320K')
     } else {
@@ -707,7 +726,7 @@ async function handleDownload(params) {
 
   if (format === 'audio' && useRange) {
     // 1. download best audio stream to a temp file
-    await runBinary(ytdlp, ['-f', '251', '--no-playlist', '-o', 'temp_%(id)s.%(ext)s', url], outputFolder)
+    await runBinary(ytdlp, [...jsArgs, '-f', '251', '--no-playlist', '-o', 'temp_%(id)s.%(ext)s', url], outputFolder)
     try {
       // 2. locate temp file
       const temp = findTempFile(outputFolder, ['.webm', '.m4a', '.opus'])
@@ -732,6 +751,7 @@ async function handleDownload(params) {
     await runBinary(
       ytdlp,
       [
+        ...jsArgs,
         '-f',
         videoSelector,
         '--no-playlist',
@@ -755,6 +775,7 @@ async function handleDownload(params) {
     await runBinary(
       ytdlp,
       [
+        ...jsArgs,
         '-f',
         videoSelector,
         '--no-playlist',

@@ -15,15 +15,23 @@ npm install
 
 ## Provide the bundled binaries (required before building)
 
-The app runs `yt-dlp.exe` and `ffmpeg.exe` as bundled binaries. Put both in `resources/bin/` before building:
+The app runs `yt-dlp.exe`, `ffmpeg.exe` and `qjs.exe` as bundled binaries. Put all three in `resources/bin/` before building:
 
 ```
 resources/bin/
   yt-dlp.exe    # https://github.com/yt-dlp/yt-dlp/releases/latest  (the "yt-dlp.exe" file)
   ffmpeg.exe    # https://www.gyan.dev/ffmpeg/builds/  (ffmpeg-release-essentials.zip -> bin/ffmpeg.exe)
+  qjs.exe       # https://github.com/quickjs-ng/quickjs/releases/latest  (qjs-windows-x86_64.exe, rename to qjs.exe)
 ```
 
-They are git-ignored (large) and bundled into the package via electron-builder's `extraResources`.
+They are git-ignored and bundled into the package via electron-builder's `extraResources` (which ships every `*.exe` in `resources/bin`). The release workflow downloads all three automatically.
+
+### qjs — QuickJS-NG JavaScript runtime (required for YouTube)
+
+- YouTube now presents a JavaScript challenge that yt-dlp must solve with an **external JS runtime** (Deno, Node ≥22, or QuickJS). See the [yt-dlp EJS guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS). A machine with none of these installed gets `Process exited with code 1` for most videos.
+- We bundle the tiny **QuickJS-NG** engine (`qjs.exe`, ~2 MB) and point yt-dlp at it via `--js-runtimes quickjs:<path>` (see `getJsRuntimeArgs()` in `src/main/index.js`). QuickJS was chosen over Deno/Node because it adds negligible size.
+- Download **`qjs-windows-x86_64.exe`** from the [quickjs-ng releases](https://github.com/quickjs-ng/quickjs/releases/latest) and rename it to **`qjs.exe`**. Use a recent release (≥ v0.12.0) — older ones are much slower at solving the challenge.
+- The EJS solver scripts themselves are already bundled inside the official `yt-dlp.exe`, so nothing else is needed.
 
 ### ffmpeg — use the **essentials** build (not full)
 
@@ -125,7 +133,7 @@ PNG-compressed `.ico`. It also writes `resources/icon-256.png` (also copied to
 ## Project structure
 
 ```
-resources/bin/        yt-dlp.exe + ffmpeg.exe (you provide)
+resources/bin/        yt-dlp.exe + ffmpeg.exe + qjs.exe (you provide)
 resources/icon.ico     app icon
 src/main/index.js      Electron main: window, IPC, download logic, getBinPath()
 src/preload/index.js   contextBridge API

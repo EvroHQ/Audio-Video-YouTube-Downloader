@@ -59,6 +59,17 @@ jobs:
           # app.asar and bloats the installer (~120 MB -> ~310 MB). Remove them.
           Remove-Item "ffmpeg.zip","ffmpeg_tmp" -Recurse -Force -ErrorAction SilentlyContinue
 
+          Write-Host "Downloading QuickJS (qjs.exe, ~2 MB)..."
+          # YouTube now requires solving a JS challenge; yt-dlp needs an external JS
+          # runtime to do it. End-user machines have no Deno/Node, so we bundle the tiny
+          # QuickJS-NG engine and point yt-dlp at it (see src/main/index.js). Without it,
+          # yt-dlp exits with code 1 for most videos.
+          $qjsRel = Invoke-RestMethod -Uri 'https://api.github.com/repos/quickjs-ng/quickjs/releases/latest' -Headers $apiHeaders
+          $qjsAsset = $qjsRel.assets | Where-Object { $_.name -eq 'qjs-windows-x86_64.exe' } | Select-Object -First 1
+          if (-not $qjsAsset) { throw 'Could not find qjs-windows-x86_64.exe on quickjs-ng/quickjs latest release' }
+          Write-Host "qjs asset: $($qjsAsset.name) ($([math]::Round($qjsAsset.size/1MB,2)) MB), release $($qjsRel.tag_name)"
+          Invoke-WebRequest -Uri $qjsAsset.browser_download_url -OutFile "resources/bin/qjs.exe"
+
           Write-Host "Binaries in place:"
           Get-ChildItem resources/bin
 
