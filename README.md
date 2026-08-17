@@ -2,7 +2,7 @@
 
 A simple, modern Windows app to download **audio** or **video** from YouTube — single videos or whole playlists.
 
-[![Latest release](https://img.shields.io/github/v/release/EvroHQ/Audio-Video-YouTube-Downloader?label=download&logo=github)](https://github.com/EvroHQ/Audio-Video-YouTube-Downloader/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/EvroHQ/EvroHQ-YouTube-Downloader?label=download&logo=github)](https://github.com/EvroHQ/EvroHQ-YouTube-Downloader/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-orange?logo=buymeacoffee&logoColor=white)](https://buymeacoffee.com/evrohq)
 
@@ -23,7 +23,7 @@ Everything is built in — no extra tools, no terminal, no setup.
 
 ## Download
 
-Get the latest version from the [**Releases page**](https://github.com/EvroHQ/Audio-Video-YouTube-Downloader/releases/latest) — installer or portable, both identical in features.
+Get the latest version from the [**Releases page**](https://github.com/EvroHQ/EvroHQ-YouTube-Downloader/releases/latest) — installer or portable, both identical in features.
 
 ---
 

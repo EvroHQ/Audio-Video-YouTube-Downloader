@@ -51,4 +51,4 @@ portable:
 publish:
   provider: github
   owner: EvroHQ
-  repo: audio-video-youtube-downloader
+  repo: EvroHQ-YouTube-Downloader
