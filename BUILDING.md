@@ -1,6 +1,6 @@
 # Building from source
 
-Developer notes for building **Audio/Video YouTube Downloader** (Electron + React + Tailwind, packaged with electron-builder).
+Developer notes for building **EvroHQ YouTube Downloader** (Electron + React + Tailwind, packaged with electron-builder).
 
 ## Prerequisites
 
@@ -83,8 +83,8 @@ npm run build:win
 
 Output goes to `release/`:
 
-- `Audio Video YouTube Downloader-Setup-1.0.0.exe` (NSIS installer)
-- `Audio Video YouTube Downloader-Portable-1.0.0.exe` (portable)
+- `EvroHQ YouTube Downloader-Setup-2.0.0.exe` (NSIS installer)
+- `EvroHQ YouTube Downloader-Portable-2.0.0.exe` (portable)
 
 ### Known issue: winCodeSign symlink extraction on Windows
 

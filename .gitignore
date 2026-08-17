@@ -12,3 +12,6 @@ serve/
 resources/bin/yt-dlp.exe
 resources/bin/ffmpeg.exe
 resources/bin/qjs.exe
+
+# Local playlist/download test output
+_pltest/

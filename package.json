@@ -1,7 +1,7 @@
 {
   "name": "audio-video-youtube-downloader",
-  "version": "1.3.5",
-  "description": "Audio/Video YouTube Downloader - download audio or video from YouTube with optional trimming, powered by yt-dlp and ffmpeg.",
+  "version": "2.0.0",
+  "description": "EvroHQ YouTube Downloader — download audio, video or playlists from YouTube, with optional trimming, powered by yt-dlp and ffmpeg.",
   "main": "./out/main/index.js",
   "author": "EvroHQ",
   "license": "MIT",

@@ -39,8 +39,8 @@ let cancelRequested = false
 // Fixed size, tall enough to fit the busiest state (trim open + downloading)
 // with the footer and progress bar always visible. The console (flex-1)
 // absorbs the slack in lighter states.
-const WINDOW_WIDTH = 780
-const WINDOW_HEIGHT = 858
+const WINDOW_WIDTH = 1050
+const WINDOW_HEIGHT = 820
 
 const CANCELLED = '__CANCELLED__'
 
@@ -90,6 +90,29 @@ function isYouTubeUrl(value) {
   }
 }
 
+// A playlist / mix link (as opposed to a single video).
+function isPlaylistUrl(value) {
+  let v = String(value == null ? '' : value).trim()
+  if (!v) return false
+  if (!/^https?:\/\//i.test(v)) v = `https://${v}`
+  try {
+    const u = new URL(v)
+    const host = u.hostname.toLowerCase().replace(/^www\./, '')
+    const allowed = [
+      'youtube.com',
+      'm.youtube.com',
+      'music.youtube.com',
+      'youtu.be',
+      'youtube-nocookie.com'
+    ]
+    if (!allowed.includes(host)) return false
+    if (u.pathname === '/playlist' && u.searchParams.has('list')) return true
+    return u.searchParams.has('list') || u.searchParams.has('start_radio')
+  } catch (e) {
+    return false
+  }
+}
+
 function getBundledBinPath(name) {
   const root = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources')
   return join(root, 'bin', name)
@@ -134,7 +157,7 @@ function createWindow() {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0a0a0a',
-    title: 'Audio/Video YouTube Downloader',
+    title: 'EvroHQ Youtube Downloader',
     icon: appIcon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -424,6 +447,81 @@ async function fetchChapters(ytdlp, url) {
   return { title, chapters }
 }
 
+// Ask yt-dlp (without downloading) for a single video's display metadata.
+// Returns { id, title, channel, views, duration, thumbnail, uploadDate } or null.
+async function fetchVideoInfo(ytdlp, url) {
+  const out = await getProcessOutput(ytdlp, [
+    ...getJsRuntimeArgs(),
+    '--skip-download',
+    '--no-playlist',
+    '--no-warnings',
+    '--print',
+    '%(.{id,title,channel,uploader,view_count,duration,thumbnail,upload_date})j',
+    url
+  ])
+  if (!out) return null
+  const line = out.split(/\r?\n/).find((l) => l.trim().startsWith('{'))
+  if (!line) return null
+  try {
+    const j = JSON.parse(line)
+    return {
+      id: j.id || null,
+      title: j.title || null,
+      channel: j.channel || j.uploader || null,
+      views: Number.isFinite(j.view_count) ? j.view_count : null,
+      duration: Number.isFinite(j.duration) ? j.duration : null,
+      thumbnail: j.thumbnail || null,
+      uploadDate: j.upload_date || null
+    }
+  } catch (e) {
+    return null
+  }
+}
+
+// Ask yt-dlp for a playlist's title and (flat) track list — fast, no per-video
+// resolution. Returns { title, count, tracks:[{id,url,title,duration}] } or null.
+async function fetchPlaylistInfo(ytdlp, url) {
+  const out = await getProcessOutput(ytdlp, [
+    ...getJsRuntimeArgs(),
+    '--skip-download',
+    '--flat-playlist',
+    '--no-warnings',
+    '--dump-single-json',
+    url
+  ])
+  if (!out) return null
+  // Best thumbnail URL for a flat playlist entry: prefer yt-dlp's own list,
+  // otherwise rebuild it from the video id (flat entries always carry one).
+  const thumbFor = (e) => {
+    if (Array.isArray(e.thumbnails) && e.thumbnails.length) {
+      const t = e.thumbnails[e.thumbnails.length - 1]
+      if (t?.url) return t.url
+    }
+    if (e.thumbnail) return e.thumbnail
+    if (e.id) return `https://i.ytimg.com/vi/${e.id}/mqdefault.jpg`
+    return null
+  }
+  try {
+    const j = JSON.parse(out)
+    const entries = Array.isArray(j.entries) ? j.entries : []
+    const tracks = entries.map((e, i) => ({
+      id: e.id || String(i),
+      url: e.url || e.webpage_url || e.id || null,
+      title: e.title || `Track ${i + 1}`,
+      duration: Number.isFinite(e.duration) ? e.duration : null,
+      thumbnail: thumbFor(e)
+    }))
+    return {
+      title: j.title || 'Playlist',
+      count: tracks.length,
+      cover: tracks[0]?.thumbnail || null,
+      tracks
+    }
+  } catch (e) {
+    return null
+  }
+}
+
 /**
  * Spawn a bundled binary and stream stdout/stderr line by line to the renderer.
  * Resolves with the process exit code.
@@ -547,6 +645,8 @@ function getMediaDuration(ffmpegPath, file) {
 async function handleDownload(params) {
   const { url, format, useRange, start, end } = params
   const byChapters = !!params.byChapters
+  // Write tags (and, for MP3, cover art) into the file. Defaults on.
+  const embedMeta = params.embedMeta !== false
 
   if (!isYouTubeUrl(url)) {
     throw new Error('Please paste a valid YouTube link (youtube.com or youtu.be).')
@@ -725,6 +825,13 @@ async function handleDownload(params) {
       // WAV: force 44.1 kHz / 16-bit stereo.
       args.push('--postprocessor-args', 'ffmpeg:-ar 44100 -ac 2 -c:a pcm_s16le')
     }
+    if (embedMeta) {
+      // Tags (title/artist/etc.) for both; cover art only for MP3 — the WAV
+      // (RIFF) container can't reliably carry an embedded picture.
+      args.push('--embed-metadata')
+      if (audioFormat === 'mp3') args.push('--embed-thumbnail', '--convert-thumbnails', 'jpg')
+      sendLog(`Embedding metadata${audioFormat === 'mp3' ? ' + cover art' : ''}.`)
+    }
     args.push('--windows-filenames', '--trim-filenames', '200')
     args.push('-o', '%(title)s.%(ext)s', url)
     await runBinary(ytdlp, args, outputFolder)
@@ -816,6 +923,90 @@ async function handleDownload(params) {
   throw new Error('Invalid download parameters.')
 }
 
+// Download selected tracks of a playlist in a single yt-dlp pass. Files land in
+// a subfolder named after the playlist (%(playlist_title)s). `playlistItems` is
+// a comma list of 1-based positions (e.g. "1,2,4"); empty means all items.
+async function handlePlaylistDownload(params) {
+  const { url } = params
+  if (!isPlaylistUrl(url)) {
+    throw new Error('Please paste a valid YouTube playlist link.')
+  }
+  const format = params.format === 'video' ? 'video' : 'audio'
+  const audioFormat = params.audioFormat === 'mp3' ? 'mp3' : 'wav'
+  const videoQuality = ['4k', '2k', '1080'].includes(params.videoQuality)
+    ? params.videoQuality
+    : '1080'
+  const embedMeta = params.embedMeta !== false
+  const playlistItems =
+    typeof params.playlistItems === 'string' ? params.playlistItems.trim() : ''
+
+  const ytdlp = getBinPath('yt-dlp.exe')
+  const ffmpeg = getBinPath('ffmpeg.exe')
+  const jsArgs = getJsRuntimeArgs()
+  const outputFolder = store.get('outputFolder') || app.getPath('downloads')
+
+  if (!existsSync(ytdlp)) {
+    throw new Error(
+      'yt-dlp.exe could not be found. If you have antivirus software, it may have ' +
+        'quarantined it (a common false positive) — restore/allow the file, or reinstall the app.'
+    )
+  }
+  if (!existsSync(ffmpeg)) {
+    throw new Error('ffmpeg.exe is missing from the bundled resources.')
+  }
+
+  const maxHeight = videoQuality === '4k' ? 2160 : videoQuality === '2k' ? 1440 : 1080
+  const videoSelector = `bv*[height<=${maxHeight}]+ba/b[height<=${maxHeight}]`
+
+  const args = [
+    ...jsArgs,
+    '--yes-playlist',
+    '--ignore-errors',
+    '--ffmpeg-location',
+    ffmpeg,
+    '--windows-filenames',
+    '--trim-filenames',
+    '200'
+  ]
+  if (playlistItems) args.push('--playlist-items', playlistItems)
+
+  if (format === 'audio') {
+    args.push('-x', '--audio-format', audioFormat)
+    if (audioFormat === 'mp3') {
+      args.push('--audio-quality', '320K')
+    } else {
+      args.push('--postprocessor-args', 'ffmpeg:-ar 44100 -ac 2 -c:a pcm_s16le')
+    }
+    if (embedMeta) {
+      args.push('--embed-metadata')
+      if (audioFormat === 'mp3') args.push('--embed-thumbnail', '--convert-thumbnails', 'jpg')
+    }
+    sendLog(
+      `Playlist audio: ${audioFormat === 'mp3' ? 'MP3 320 kbps' : 'WAV 44.1 kHz'}` +
+        `${embedMeta ? ' · embedding metadata' : ''}`
+    )
+  } else {
+    args.push('-f', videoSelector, '--merge-output-format', 'mp4')
+    sendLog(`Playlist video: up to ${maxHeight}p (best available) → MP4`)
+  }
+
+  // Subfolder named after the playlist, one file per track inside it.
+  args.push('-o', '%(playlist_title)s/%(title)s.%(ext)s', url)
+
+  try {
+    await runBinary(ytdlp, args, outputFolder)
+  } catch (err) {
+    if (err.message === CANCELLED || cancelRequested) throw err
+    // With --ignore-errors, a non-zero exit means some items were skipped
+    // (private/deleted/region-locked). Treat that as completed-with-warnings.
+    if (/exited with code/i.test(err.message)) {
+      sendLog('Some items could not be downloaded and were skipped — see the log above.')
+      return
+    }
+    throw err
+  }
+}
+
 // ---------------------------------------------------------------------------
 // IPC handlers
 // ---------------------------------------------------------------------------
@@ -886,6 +1077,39 @@ ipcMain.handle('start-download', async (_event, params) => {
   }
 })
 
+ipcMain.handle('start-playlist-download', async (_event, params) => {
+  cancelRequested = false
+  const details = {
+    url: params?.url || null,
+    video_id: null,
+    format: params?.format || null,
+    quality:
+      params?.format === 'audio' ? params?.audioFormat || null : params?.videoQuality || null,
+    trim: false,
+    by_chapters: false,
+    chapter_count: null
+  }
+  try {
+    sendLog('Starting playlist download...')
+    await handlePlaylistDownload(params)
+    sendLog('Playlist download finished.')
+    sendComplete({ success: true, message: 'Playlist download complete!' })
+    sendTelemetry('download', { ...details, success: true })
+    return { success: true }
+  } catch (err) {
+    if (err.message === CANCELLED || cancelRequested) {
+      sendLog('Playlist download cancelled by user.')
+      sendComplete({ success: false, cancelled: true, message: 'Download cancelled' })
+      sendTelemetry('download', { ...details, success: false, error: 'cancelled' })
+      return { success: false, cancelled: true }
+    }
+    sendLog(`ERROR: ${err.message}`)
+    sendComplete({ success: false, message: err.message })
+    sendTelemetry('download', { ...details, success: false, error: err.message })
+    return { success: false, error: err.message }
+  }
+})
+
 ipcMain.handle('cancel-download', () => {
   cancelRequested = true
   if (currentChild) {
@@ -905,6 +1129,31 @@ ipcMain.handle('get-chapters', async (_event, url) => {
     return await fetchChapters(ytdlp, url)
   } catch (e) {
     return { title: null, chapters: [], error: e.message }
+  }
+})
+
+// Fetch a single video's display metadata (title, channel, duration, thumbnail)
+// so the renderer can show a real preview before downloading.
+ipcMain.handle('get-video-info', async (_event, url) => {
+  try {
+    if (!isYouTubeUrl(url)) return null
+    const ytdlp = getBinPath('yt-dlp.exe')
+    if (!existsSync(ytdlp)) return null
+    return await fetchVideoInfo(ytdlp, url)
+  } catch (e) {
+    return { error: e.message }
+  }
+})
+
+// Fetch a playlist's title and flat track list for the preview panel.
+ipcMain.handle('get-playlist-info', async (_event, url) => {
+  try {
+    if (!isPlaylistUrl(url)) return null
+    const ytdlp = getBinPath('yt-dlp.exe')
+    if (!existsSync(ytdlp)) return null
+    return await fetchPlaylistInfo(ytdlp, url)
+  } catch (e) {
+    return { error: e.message }
   }
 })
 

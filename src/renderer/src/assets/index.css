@@ -16,8 +16,8 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
-  background-color: #08080b;
-  color: #f4f4f5;
+  background-color: #09090b;
+  color: #fafafa;
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -33,83 +33,119 @@ input {
 }
 
 /* --------------------------------------------------------------------------
-   Aurora background — soft drifting colored blobs behind a frosted layer.
+   Ambient blobs — three blurred organic shapes drifting behind everything.
    -------------------------------------------------------------------------- */
-.aurora {
+.amb {
   position: fixed;
-  inset: -25%;
+  inset: 0;
   z-index: 0;
   pointer-events: none;
-  filter: blur(90px) saturate(140%);
-  opacity: 0.6;
+  overflow: hidden;
 }
-.aurora span {
+.amb .blob {
   position: absolute;
-  display: block;
   border-radius: 9999px;
-  mix-blend-mode: screen;
+  filter: blur(100px);
 }
-.aurora .b1 {
-  width: 46%;
-  height: 46%;
-  left: -8%;
-  top: -10%;
-  background: radial-gradient(circle at 30% 30%, #5618a7, transparent 50%);
-  animation: driftA 22s ease-in-out infinite;
+.amb .blob1 {
+  width: 620px;
+  height: 520px;
+  left: -180px;
+  top: -200px;
+  opacity: 0.24;
+  background: radial-gradient(circle at 40% 40%, #5618a7, transparent 62%);
+  animation: drift1 18s ease-in-out infinite;
 }
-.aurora .b2 {
-  width: 42%;
-  height: 42%;
-  right: -6%;
-  top: 4%;
-  background: radial-gradient(circle at 60% 40%, #db2736, transparent 50%);
-  animation: driftB 26s ease-in-out infinite;
+.amb .blob2 {
+  width: 540px;
+  height: 460px;
+  right: -160px;
+  top: -140px;
+  opacity: 0.18;
+  background: radial-gradient(circle at 60% 40%, #db2736, transparent 62%);
+  animation: drift2 23s ease-in-out infinite;
 }
-.aurora .b3 {
-  width: 48%;
-  height: 48%;
-  left: 20%;
-  bottom: -18%;
-  background: radial-gradient(circle at 50% 50%, #2563eb, transparent 50%);
-  animation: driftC 30s ease-in-out infinite;
+.amb .blob3 {
+  width: 700px;
+  height: 420px;
+  left: 25%;
+  bottom: -240px;
+  opacity: 0.16;
+  background: radial-gradient(circle at 50% 50%, #5618a7, transparent 62%);
+  animation: drift3 27s ease-in-out infinite;
+}
+@keyframes drift1 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(50px, 40px) scale(1.12);
+  }
+}
+@keyframes drift2 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1.08);
+  }
+  50% {
+    transform: translate(-45px, 55px) scale(0.95);
+  }
+}
+@keyframes drift3 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(60px, -40px) scale(1.15);
+  }
 }
 
-@keyframes driftA {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(10%, 8%) scale(1.12);
-  }
-}
-@keyframes driftB {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(-9%, 10%) scale(0.92);
-  }
-}
-@keyframes driftC {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(6%, -8%) scale(1.08);
-  }
-}
-
-/* Subtle grain/vignette over the aurora for depth. */
+/* Subtle vignette over the blobs for depth. */
 .grain {
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background:
-    radial-gradient(120% 120% at 50% 0%, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+  background: radial-gradient(120% 120% at 50% 0%, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+/* --------------------------------------------------------------------------
+   Gradient-border card (update banner) — double background trick.
+   -------------------------------------------------------------------------- */
+.banner-grad {
+  border: 1px solid transparent;
+  background-image: linear-gradient(#111013, #111013),
+    linear-gradient(100deg, #5618a7, #db2736);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+}
+
+/* Striped placeholder for thumbnails/covers with no real image yet. */
+.striped {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.05) 0,
+    rgba(255, 255, 255, 0.05) 10px,
+    rgba(255, 255, 255, 0.02) 10px,
+    rgba(255, 255, 255, 0.02) 20px
+  );
+}
+
+/* Thin scrollbar for the playlist track list. */
+.list-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.list-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+.list-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 /* --------------------------------------------------------------------------

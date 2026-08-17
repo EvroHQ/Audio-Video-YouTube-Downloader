@@ -5,7 +5,7 @@ set -euo pipefail
 
 REPO="EvroHQ/Audio-Video-YouTube-Downloader"
 TAG="v1.0.0"
-RELEASE_NAME="Audio/Video YouTube Downloader v1.0.0"
+RELEASE_NAME="EvroHQ YouTube Downloader v1.0.0"
 API="https://api.github.com"
 UPLOAD="https://uploads.github.com"
 

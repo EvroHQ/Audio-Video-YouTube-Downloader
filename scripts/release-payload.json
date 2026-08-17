@@ -1,7 +1,7 @@
 {
   "tag_name": "v1.0.0",
-  "name": "Audio/Video YouTube Downloader v1.0.0",
-  "body": "Windows build of Audio/Video YouTube Downloader.\n\n- **Setup**: installer, lets you choose the install location.\n- **Portable**: single .exe, no installation.\n\nyt-dlp and ffmpeg are bundled inside — the end user installs nothing else.",
+  "name": "EvroHQ YouTube Downloader v2.0.0",
+  "body": "Windows build of EvroHQ YouTube Downloader.\n\n- **Setup**: installer, lets you choose the install location.\n- **Portable**: single .exe, no installation.\n\nyt-dlp and ffmpeg are bundled inside — the end user installs nothing else.",
   "draft": false,
   "prerelease": false
 }

@@ -4,26 +4,27 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        base: '#08080b',
+        base: '#09090b',
         surface: '#111114',
         'surface-border': '#232329',
-        'text-primary': '#f4f4f5',
-        'text-secondary': '#8b8b96',
-        'text-muted': '#5c5c66',
+        'text-primary': '#d4d4d8',
+        'text-body': '#d4d4d8',
+        'text-secondary': '#71717a',
+        'text-muted': '#52525b',
         accentStart: '#5618a7',
         accentMid: '#a02368',
         accentEnd: '#db2736',
-        success: '#34d399',
-        error: '#f87171'
+        success: '#22c55e',
+        error: '#ef4444'
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', '"Fira Code"', 'Consolas', 'monospace']
       },
       backgroundImage: {
-        'accent-gradient': 'linear-gradient(135deg, rgb(86, 24, 167) 0%, rgb(219, 39, 54) 100%)',
+        'accent-gradient': 'linear-gradient(100deg, #5618A7 0%, #DB2736 100%)',
         'accent-gradient-soft':
-          'linear-gradient(135deg, rgba(86, 24, 167, 0.18) 0%, rgba(219, 39, 54, 0.18) 100%)'
+          'linear-gradient(100deg, rgba(86, 24, 167, 0.18) 0%, rgba(219, 39, 54, 0.18) 100%)'
       },
       boxShadow: {
         glow: '0 10px 40px -10px rgba(86, 24, 167, 0.5)',
