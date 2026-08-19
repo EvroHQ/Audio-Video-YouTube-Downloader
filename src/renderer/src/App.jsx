@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Toaster, toast } from 'sonner'
 import {
   Download,
   Clipboard,
@@ -11,13 +12,26 @@ import {
   Coffee,
   Film,
   Square,
+  ChevronDown,
   CheckCircle2,
   XCircle,
-  ChevronDown
+  Info,
+  AlertTriangle
 } from 'lucide-react'
-import logo from './assets/logo.png'
 
 const spring = { type: 'spring', stiffness: 420, damping: 34 }
+
+const THEMES = [
+  { id: 'evrohq', name: 'EvroHQ' },
+  { id: 'graphite-amber', name: 'Graphite & Amber' },
+  { id: 'carbon-cyan', name: 'Carbon & Cyan' },
+  { id: 'obsidian-violet', name: 'Obsidian & Violet' },
+  { id: 'charcoal-red', name: 'Charcoal & Signal Red' },
+  { id: 'paper-rust', name: 'Paper & Rust' },
+  { id: 'bone-forest', name: 'Bone & Forest' }
+]
+
+const LIGHT_THEMES = new Set(['paper-rust', 'bone-forest'])
 
 /* -------------------------------------------------------------------------- */
 /*  URL helpers                                                               */
@@ -90,6 +104,30 @@ function formatTimeInput(raw) {
   return d
 }
 
+function parseTimeToSeconds(value) {
+  const str = String(value ?? '').trim()
+  if (!str) return null
+  const parts = str.split(':')
+  if (parts.length > 3) return null
+  let seconds = 0
+  for (const part of parts) {
+    if (!/^\d*\.?\d+$/.test(part)) return null
+    seconds = seconds * 60 + parseFloat(part)
+  }
+  return seconds
+}
+
+function trimRangeError(startValue, endValue) {
+  const startSec = parseTimeToSeconds(startValue || '00:00:00')
+  const endSec = parseTimeToSeconds(endValue || '00:00:00')
+  if (startSec == null) return `Invalid Start time "${startValue}". Use hh:mm:ss, mm:ss or seconds.`
+  if (endSec == null) return `Invalid End time "${endValue}". Use hh:mm:ss, mm:ss or seconds.`
+  if (endSec <= startSec) {
+    return `End (${fmtClock(endSec)}) must be greater than Start (${fmtClock(startSec)}).`
+  }
+  return null
+}
+
 // Compact view/like counts: 1200000 -> "1.2M".
 function formatCount(n) {
   if (n == null || !Number.isFinite(n)) return null
@@ -120,21 +158,6 @@ function relativeDate(yyyymmdd) {
   return `${y} year${y > 1 ? 's' : ''} ago`
 }
 
-// Classify a console line by yt-dlp/ffmpeg severity *prefix* only — matching
-// substrings like "missing" or "failed" would wrongly flag benign WARNING lines
-// (e.g. "…formats have been skipped as they are missing a url") as errors.
-function logTone(line) {
-  if (/\bERROR\b\s*:?/.test(line)) return 'error'
-  if (/\bWARNING\b\s*:?/i.test(line)) return 'warn'
-  return 'info'
-}
-
-const TONE = {
-  error: 'text-error',
-  warn: 'text-amber-400',
-  info: 'text-success/85'
-}
-
 /* -------------------------------------------------------------------------- */
 /*  App                                                                       */
 /* -------------------------------------------------------------------------- */
@@ -153,13 +176,13 @@ export default function App() {
   const [version, setVersion] = useState('')
   const [downloading, setDownloading] = useState(false)
   const [stopping, setStopping] = useState(false)
-  const [logs, setLogs] = useState([])
   const [progress, setProgress] = useState(0)
   const [playlistPos, setPlaylistPos] = useState(null)
-  const [toast, setToast] = useState(null)
   const [ytdlpUpdate, setYtdlpUpdate] = useState(null)
   const [updatingYtdlp, setUpdatingYtdlp] = useState(false)
   const [appUpdate, setAppUpdate] = useState(null)
+  const [theme, setTheme] = useState('evrohq')
+  const themeReady = useRef(false)
 
   // Real metadata for the preview panel (fetched via yt-dlp).
   const [videoInfo, setVideoInfo] = useState(null)
@@ -168,14 +191,7 @@ export default function App() {
   const [previewError, setPreviewError] = useState(null)
   const [selected, setSelected] = useState(() => new Set())
 
-  const logRef = useRef(null)
   const previewReq = useRef(0)
-  const readyLogged = useRef(false)
-
-  const pushLog = (msg) => {
-    const t = new Date().toTimeString().slice(0, 8)
-    setLogs((prev) => [...prev, `[${t}] ${msg}`])
-  }
 
   const urlState = useMemo(() => {
     if (!url.trim()) return null
@@ -189,6 +205,8 @@ export default function App() {
     window.api?.getConfig().then((cfg) => {
       if (cfg?.outputFolder) setOutputFolder(cfg.outputFolder)
       if (cfg?.version) setVersion(cfg.version)
+      if (cfg?.theme) setTheme(cfg.theme)
+      themeReady.current = true
     })
 
     const offLog = window.api?.onLog((line) => {
@@ -196,8 +214,11 @@ export default function App() {
       if (match) setProgress(parseFloat(match[1]))
       const item = line.match(/Downloading (?:item|video) (\d+) of (\d+)/i)
       if (item) setPlaylistPos({ current: Number(item[1]), total: Number(item[2]) })
-      const clean = line.replace(/(\d+(?:\.\d+)?)%/g, (_m, n) => `${Math.round(parseFloat(n))}%`)
-      setLogs((prev) => [...prev, clean])
+      if (/^ERROR:/.test(line) && /not found/.test(line)) {
+        toast.error(line.replace(/^ERROR:\s*/, ''))
+      } else if (/were skipped/.test(line)) {
+        toast.warning('Some items could not be downloaded and were skipped')
+      }
     })
 
     const offComplete = window.api?.onComplete((payload) => {
@@ -205,17 +226,21 @@ export default function App() {
       setStopping(false)
       setProgress(payload.success ? 100 : 0)
       setPlaylistPos(null)
-      setToast({ success: payload.success, message: payload.message })
+      if (payload.cancelled) toast.info(payload.message || 'Download cancelled')
+      else if (payload.success) toast.success(payload.message || 'Download complete')
+      else toast.error(payload.message || 'Download failed')
     })
 
-    const offAppUpdate = window.api?.onAppUpdate((payload) => setAppUpdate(payload))
+    const offAppUpdate = window.api?.onAppUpdate((payload) => {
+      setAppUpdate(payload)
+      if (payload?.status === 'available' && payload.version) {
+        toast.info(`App update ${payload.version} available`)
+      } else if (payload?.status === 'downloaded' && payload.version) {
+        toast.success(`Version ${payload.version} ready — restart to install`)
+      }
+    })
 
     window.api?.checkYtdlpUpdate().then((res) => {
-      if (!readyLogged.current) {
-        readyLogged.current = true
-        if (res?.current) pushLog(`yt-dlp ${res.current} ready — paste a YouTube link to begin.`)
-        else pushLog('Ready — paste a YouTube link to begin.')
-      }
       if (res?.updateAvailable) setYtdlpUpdate(res)
     })
 
@@ -226,6 +251,12 @@ export default function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    document.documentElement.style.colorScheme = LIGHT_THEMES.has(theme) ? 'light' : 'dark'
+    if (themeReady.current) window.api?.setConfig({ theme })
+  }, [theme])
 
   // Follow the pasted URL into the matching preview mode.
   useEffect(() => {
@@ -279,16 +310,6 @@ export default function App() {
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, urlState])
-
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
-  }, [logs])
-
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(null), 3200)
-    return () => clearTimeout(t)
-  }, [toast])
 
   /* --- derived ----------------------------------------------------------- */
   const perHourMB =
@@ -367,8 +388,8 @@ export default function App() {
     try {
       const text = await navigator.clipboard.readText()
       if (text) setUrl(text.trim())
-    } catch (e) {
-      pushLog(`Could not read clipboard: ${e.message}`)
+    } catch {
+      toast.error('Could not read clipboard')
     }
   }
 
@@ -379,6 +400,13 @@ export default function App() {
 
   const handleDownload = async () => {
     if (!canDownload) return
+    if (mode === 'single' && useRange) {
+      const err = trimRangeError(start, end)
+      if (err) {
+        toast.error(err)
+        return
+      }
+    }
     if (mode === 'playlist') {
       const items = playlistTracks
         .map((t, i) => (selected.has(t.id) ? i + 1 : null))
@@ -388,10 +416,11 @@ export default function App() {
       setStopping(false)
       setProgress(0)
       setPlaylistPos({ current: 0, total: selected.size })
-      pushLog(`Sending playlist request — ${selected.size} of ${playlistTracks.length} track(s)…`)
+      toast.info(`Downloading ${selected.size} tracks`)
       await window.api?.startPlaylistDownload({
         url: url.trim(),
         playlistItems: items,
+        itemCount: selected.size,
         format,
         audioFormat,
         videoQuality,
@@ -402,7 +431,7 @@ export default function App() {
     setDownloading(true)
     setStopping(false)
     setProgress(0)
-    pushLog('Sending request…')
+    toast.info('Download started')
     await window.api?.startDownload({
       url: url.trim(),
       format,
@@ -422,19 +451,15 @@ export default function App() {
 
   async function handleUpdateYtdlp() {
     setUpdatingYtdlp(true)
+    toast.loading('Updating yt-dlp…', { id: 'ytdlp-update' })
     const res = await window.api?.updateYtdlp()
     setUpdatingYtdlp(false)
     if (res?.success) {
       setYtdlpUpdate(null)
-      setToast({ success: true, message: `yt-dlp updated to ${res.version || 'latest'}` })
+      toast.success(`yt-dlp updated to ${res.version || 'latest'}`, { id: 'ytdlp-update' })
     } else {
-      setToast({ success: false, message: 'yt-dlp update failed — see console' })
+      toast.error('yt-dlp update failed', { id: 'ytdlp-update' })
     }
-  }
-
-  const handleClearLogs = () => {
-    setLogs([])
-    setProgress(0)
   }
 
   const toggleTrack = (id) =>
@@ -447,19 +472,21 @@ export default function App() {
   const selectAll = () => setSelected(new Set(playlistTracks.map((t) => t.id)))
   const deselectAll = () => setSelected(new Set())
 
+  const spec = true
+
   const urlRing =
     urlState === null
-      ? 'rgba(255,255,255,0.10)'
+      ? 'var(--border)'
       : urlState === 'invalid'
         ? 'rgba(239,68,68,0.45)'
-        : 'rgba(52,211,153,0.40)'
+        : 'var(--accent)'
 
   const downloadLabel =
     mode === 'playlist'
       ? selected.size > 0
-        ? `DOWNLOAD ALL (${selected.size} TRACKS)`
-        : 'SELECT TRACKS TO DOWNLOAD'
-      : 'DOWNLOAD'
+        ? `Download all (${selected.size} tracks)`
+        : 'Select tracks to download'
+      : 'Download'
 
   // Embed toggle is available for audio (single) and playlists. It's hidden while
   // Trim is open — embedding isn't applied to trimmed audio anyway — which also
@@ -478,7 +505,7 @@ export default function App() {
       </div>
       <div className="grain" />
 
-      <div className="relative z-10 flex h-full min-h-0 flex-col gap-3 px-6 pb-4 pt-4">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3 p-5">
         {/* Update banner */}
         <AnimatePresence>
           {activeBanner && <UpdateBanner key={activeBanner.key} {...activeBanner} />}
@@ -493,58 +520,54 @@ export default function App() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                className="absolute -bottom-4 -left-6 -right-6 -top-3 z-20 cursor-not-allowed bg-black/72 backdrop-blur-[4px]"
+                className="absolute -inset-5 z-20 cursor-not-allowed bg-black/72 backdrop-blur-[4px]"
               />
             )}
           </AnimatePresence>
 
           {/* Top bar — brand on the left, version on the right */}
           <header className="flex shrink-0 items-center gap-3">
-            <img
-              src={logo}
-              alt="EvroHQ YouTube Downloader"
-              draggable={false}
-              className="h-[46px] w-[46px] shrink-0 select-none rounded-2xl shadow-glow ring-1 ring-white/15"
-            />
+            <AppLogo />
             <div className="min-w-0">
-              <h1 className="text-[20px] font-extrabold leading-tight tracking-tight">
-                <span className="bg-accent-gradient bg-clip-text font-black text-transparent">
-                  EvroHQ
-                </span>{' '}
-                <span className="text-text-primary font-black">YouTube Downloader</span>
+              <h1 className={`text-[17px] font-bold leading-tight tracking-[-0.3px] ${LIGHT_THEMES.has(theme) ? 'text-black' : 'text-white'}`}>
+                EvroHQ YouTube Downloader
               </h1>
-              <p className="text-[11px] font-medium text-text-secondary">
+              <p className="text-[12px] font-normal text-[var(--text-dim)]">
                 Audio &amp; video · powered by yt-dlp &amp; ffmpeg
               </p>
             </div>
-            {version && (
-              <span className="ml-auto self-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 font-mono text-[11px] font-medium text-text-secondary">
-                v{version}
-              </span>
-            )}
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <ThemeMenu value={theme} onChange={setTheme} />
+              {version && (
+                <span className="chrome-chip self-center px-2.5 py-1 font-mono text-[11px] font-medium">
+                  v{version}
+                </span>
+              )}
+            </div>
           </header>
 
           {/* Main two-column grid */}
-          <div className="grid min-h-0 flex-1 grid-cols-[420px_1fr] gap-5">
+          <div className="grid min-h-0 flex-1 grid-cols-[462px_minmax(0,1fr)] gap-[22px]">
             {/* LEFT — controls */}
             <div className="flex min-h-0 flex-col gap-3">
               {/* Controls — compact enough to fit without scrolling, even with Trim open */}
               <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
                 {/* URL field */}
                 <div
-                  className="flex items-center gap-2.5 rounded-2xl bg-white/[0.04] px-4 py-2 transition-colors focus-within:bg-white/[0.06]"
+                  className={`flex items-center gap-2.5 px-4 py-2 transition-colors ${spec ? 'rounded-[10px] bg-[var(--surface)]' : 'rounded-2xl bg-white/[0.04] focus-within:bg-white/[0.06]'
+                    }`}
                   style={{ border: `1px solid ${urlRing}` }}
                 >
                   <input
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="Paste a YouTube video or playlist link…"
-                    className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
+                    className={`flex-1 bg-transparent text-text-primary placeholder:text-text-muted focus:outline-none ${spec ? 'font-mono text-[13px]' : 'text-sm'}`}
                   />
                   <button
                     onClick={handlePaste}
                     title="Paste from clipboard"
-                    className="grid h-7 w-7 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-text-secondary transition-colors hover:border-white/20 hover:text-text-primary"
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] border border-[var(--border)] bg-[var(--sunken)] text-[var(--text-dim)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)]"
                   >
                     <Clipboard size={15} />
                   </button>
@@ -555,6 +578,7 @@ export default function App() {
                   <SectionLabel>Format</SectionLabel>
                   <div className="grid grid-cols-2 gap-2">
                     <FormatCard
+                      spec={spec}
                       active={format === 'audio'}
                       onClick={() => setFormat('audio')}
                       icon={<Music size={16} />}
@@ -562,6 +586,7 @@ export default function App() {
                       subtitle={audioFormat === 'wav' ? 'WAV · 44.1 kHz' : 'MP3 · 320 kbps'}
                     />
                     <FormatCard
+                      spec={spec}
                       active={format === 'video'}
                       onClick={() => setFormat('video')}
                       icon={<Video size={16} />}
@@ -573,12 +598,35 @@ export default function App() {
 
                 {/* Quality pills */}
                 {format === 'audio' ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <Pill group="a" active={audioFormat === 'wav'} onClick={() => setAudioFormat('wav')}>
-                      WAV · Lossless
+                  spec ? (
+                    <div className="flex rounded-[8px] border border-[var(--border)] bg-[var(--sunken)] p-[3px]">
+                      <Pill spec active={audioFormat === 'wav'} onClick={() => setAudioFormat('wav')}>
+                        WAV · Lossless
+                      </Pill>
+                      <Pill spec active={audioFormat === 'mp3'} onClick={() => setAudioFormat('mp3')}>
+                        MP3 · 320 kbps
+                      </Pill>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Pill group="a" active={audioFormat === 'wav'} onClick={() => setAudioFormat('wav')}>
+                        WAV · Lossless
+                      </Pill>
+                      <Pill group="a" active={audioFormat === 'mp3'} onClick={() => setAudioFormat('mp3')}>
+                        MP3 · 320 kbps
+                      </Pill>
+                    </div>
+                  )
+                ) : spec ? (
+                  <div className="flex rounded-[8px] border border-[var(--border)] bg-[var(--sunken)] p-[3px]">
+                    <Pill spec active={videoQuality === '1080'} onClick={() => setVideoQuality('1080')}>
+                      1080p
                     </Pill>
-                    <Pill group="a" active={audioFormat === 'mp3'} onClick={() => setAudioFormat('mp3')}>
-                      MP3 · 320 kbps
+                    <Pill spec active={videoQuality === '2k'} onClick={() => setVideoQuality('2k')}>
+                      2K · 1440p
+                    </Pill>
+                    <Pill spec active={videoQuality === '4k'} onClick={() => setVideoQuality('4k')}>
+                      4K · 2160p
                     </Pill>
                   </div>
                 ) : (
@@ -600,7 +648,7 @@ export default function App() {
                   <div>
                     <button
                       onClick={() => setUseRange((v) => !v)}
-                      className="glass-soft flex w-full items-center justify-between rounded-2xl px-4 py-2.5 text-left transition-colors hover:border-white/10"
+                      className="flex w-full items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-left"
                     >
                       <span className="text-sm font-medium">Trim a specific range</span>
                       <Switch on={useRange} />
@@ -623,7 +671,10 @@ export default function App() {
                     </AnimatePresence>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2.5 rounded-2xl border border-dashed border-white/[0.20] px-4 py-2.5 text-sm font-medium text-text-muted">
+                  <div className={`flex items-center gap-2.5 px-4 py-2.5 font-mono text-[12px] ${spec
+                    ? 'rounded-[10px] border border-dashed border-[var(--border-strong)] bg-[var(--sunken)] text-[var(--text-dim)]'
+                    : 'rounded-2xl border border-dashed border-white/[0.20] text-sm font-medium text-text-muted'
+                    }`}>
                     <span className="h-1.5 w-1.5 rounded-full bg-text-muted" />
                     Trimming is unavailable in playlist mode
                   </div>
@@ -644,16 +695,19 @@ export default function App() {
               <div className="flex shrink-0 flex-col gap-3">
                 <div>
                   <SectionLabel>Output folder</SectionLabel>
-                  <div className="glass-soft flex items-center gap-2 rounded-2xl px-3 py-2">
+                  <div className={`flex items-center gap-2 rounded-[10px] px-3 py-2 ${spec ? 'border border-[var(--border)] bg-[var(--sunken)]' : 'glass-soft rounded-2xl'}`}>
                     <FolderOpen size={15} className="shrink-0 text-text-secondary" />
                     <input
                       readOnly
                       value={outputFolder}
-                      className="flex-1 truncate bg-transparent text-sm text-text-secondary focus:outline-none"
+                      className={`flex-1 truncate bg-transparent focus:outline-none ${spec ? 'font-mono text-[12px] text-[var(--text)] opacity-80' : 'text-sm text-text-secondary'}`}
                     />
                     <button
                       onClick={handleChangeFolder}
-                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-white/20 hover:text-text-primary"
+                      className={`px-3 py-1.5 text-[12px] font-medium ${spec
+                        ? 'rounded-[7px] border border-[var(--border)] bg-[var(--control)] text-[var(--text)]'
+                        : 'rounded-xl border border-white/10 bg-white/5 text-xs text-text-secondary transition-colors hover:border-white/20 hover:text-text-primary'
+                        }`}
                     >
                       Change
                     </button>
@@ -662,16 +716,16 @@ export default function App() {
 
                 {downloading ? (
                   <div className="flex gap-2">
-                    <div className="glass-soft flex h-[52px] flex-1 items-center justify-center gap-2 rounded-2xl text-sm font-bold tracking-wide text-text-secondary">
+                    <div className="glass-soft flex h-[46px] flex-1 items-center justify-center gap-2 rounded-2xl text-sm font-bold tracking-wide text-text-secondary">
                       <Loader2 size={16} className="animate-spin" />
                       DOWNLOADING…
                     </div>
                     <button
                       onClick={handleStop}
                       disabled={stopping}
-                      className={`flex h-[52px] items-center justify-center gap-2 rounded-2xl border px-5 text-sm font-medium transition-colors ${stopping
-                        ? 'cursor-not-allowed border-white/10 bg-white/5 text-text-muted'
-                        : 'border-white/10 bg-white/5 text-text-secondary hover:border-error/60 hover:text-error'
+                      className={`flex h-[46px] items-center justify-center gap-2 rounded-[10px] border px-5 text-sm font-medium ${stopping
+                        ? 'cursor-not-allowed border-[var(--border)] bg-[var(--sunken)] text-[var(--text-faint)]'
+                        : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-dim)] hover:border-error/60 hover:text-error'
                         }`}
                     >
                       <Square size={13} />
@@ -683,8 +737,8 @@ export default function App() {
                     whileTap={canDownload ? { scale: 0.985 } : {}}
                     onClick={handleDownload}
                     disabled={!canDownload}
-                    className={`flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-bold tracking-wide transition-[filter,box-shadow] ${canDownload
-                      ? 'bg-accent-gradient text-white shadow-glow hover:brightness-110'
+                    className={`flex h-[46px] w-full items-center justify-center gap-2 rounded-[8px] text-[15px] font-bold tracking-wide transition-[filter] ${canDownload
+                      ? 'bg-accent-gradient text-[var(--on-accent)] hover:brightness-110'
                       : 'glass-soft cursor-not-allowed text-text-muted'
                       }`}
                   >
@@ -696,14 +750,17 @@ export default function App() {
             </div>
 
             {/* RIGHT — preview */}
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl glass p-5">
+            <div className={`flex min-h-0 flex-col overflow-hidden p-5 ${spec ? 'rounded-[12px] bg-[var(--panel)] ring-1 ring-[var(--border)]' : 'rounded-2xl glass'}`}>
               <div className="mb-3 flex shrink-0 items-center justify-between">
                 <SectionLabel className="mb-0">Preview</SectionLabel>
-                <div className="flex rounded-full border border-white/10 bg-white/5 p-0.5 text-[11px] font-medium">
-                  <ModeTab active={mode === 'single'} onClick={() => setMode('single')}>
+                <div className={`flex p-0.5 text-[12px] font-medium ${spec
+                  ? 'rounded-[8px] border border-[var(--border)] bg-[var(--sunken)]'
+                  : 'rounded-full border border-white/10 bg-white/5 text-[11px]'
+                  }`}>
+                  <ModeTab spec={spec} active={mode === 'single'} onClick={() => setMode('single')}>
                     Single video
                   </ModeTab>
-                  <ModeTab active={mode === 'playlist'} onClick={() => setMode('playlist')}>
+                  <ModeTab spec={spec} active={mode === 'playlist'} onClick={() => setMode('playlist')}>
                     Playlist
                   </ModeTab>
                 </div>
@@ -739,120 +796,78 @@ export default function App() {
             </div>
           </div>
 
-          {/* Progress row — bar aligned with the preview column */}
-          <div className="grid shrink-0 grid-cols-[420px_1fr] items-center gap-5">
-            <span className="truncate text-right text-[11px] font-medium text-text-secondary">
+          <div className="flex shrink-0 items-center gap-3 mt-2">
+            <span className="shrink-0 font-mono text-[11px] text-[var(--text-faint)]">
               {statusText}
             </span>
-            <div className="flex items-center gap-3">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+            <div className="relative min-w-0 flex-1">
+              <div className={`overflow-hidden rounded-full ${spec ? 'h-[3px] bg-[var(--border)]' : 'h-1.5 bg-white/10'}`}>
                 <motion.div
                   className="h-full rounded-full bg-accent-gradient"
                   animate={{ width: `${downloading ? Math.max(progress, 2) : 0}%` }}
                   transition={{ ease: 'linear', duration: 0.2 }}
                 />
               </div>
-              <span className="w-12 shrink-0 text-right font-mono text-[11px] font-semibold text-text-secondary">
+              <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 bg-base pl-3 font-mono text-[11px] tabular-nums text-[var(--text-faint)]">
                 {(downloading ? progress : 0).toFixed(1)}%
               </span>
             </div>
           </div>
-
-          {/* Console */}
-          <div className="shrink-0 overflow-hidden rounded-2xl glass-soft">
-            <div className="flex items-center gap-3 border-b border-white/5 px-3.5 py-2">
-              <span className="flex items-center gap-2 shrink-0 font-mono text-[10px] font-semibold uppercase tracking-wide text-text-muted">
-                <span className="inline-flex gap-1">
-                  <span className="h-2 w-2 rounded-full bg-error/70" />
-                  <span className="h-2 w-2 rounded-full bg-amber-400/70" />
-                  <span className="h-2 w-2 rounded-full bg-success/70" />
-                </span>
-                &gt; Console
-              </span>
-              <span className="min-w-0 flex-1" />
-              <span className="shrink-0 font-mono text-[10px] text-text-muted">
-                {logs.length} {logs.length === 1 ? 'line' : 'lines'}
-              </span>
-              <button
-                onClick={handleClearLogs}
-                disabled={downloading || logs.length === 0}
-                className={`shrink-0 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-medium transition-colors ${downloading || logs.length === 0
-                  ? 'cursor-not-allowed text-text-muted/50'
-                  : 'text-text-secondary hover:border-white/20 hover:text-text-primary'
-                  }`}
-              >
-                Clear
-              </button>
-            </div>
-            <div
-              ref={logRef}
-              className="log-scroll h-[92px] overflow-y-auto px-3.5 py-2 font-mono text-[11px] leading-relaxed"
-            >
-              {logs.length === 0 ? (
-                <span className="text-text-muted">No output yet.</span>
-              ) : (
-                logs.map((line, i) => (
-                  <div key={i} className={TONE[logTone(line)]}>
-                    {line}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="flex shrink-0 items-center justify-between">
-            <p className="text-[11px] text-text-muted">
-              Made by{' '}
-              <a
-                href="https://github.com/EvroHQ"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => window.api?.trackLink('madeby')}
-                className="bg-accent-gradient bg-clip-text font-semibold text-transparent"
-              >
-                @EvroHQ
-              </a>
-            </p>
-            <a
-              href="https://buymeacoffee.com/evrohq"
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => window.api?.trackLink('coffee')}
-              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-text-secondary transition-colors hover:border-accentMid/50 hover:text-text-primary"
-            >
-              <Coffee size={13} className="text-accentMid" />
-              Buy me a coffee
-            </a>
-          </div>
         </div>
       </div>
 
-      {/* Toast */}
-      <AnimatePresence>
-        {toast && (
-          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center">
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.96 }}
-              transition={spring}
-              className="glass flex items-center gap-2.5 rounded-2xl px-5 py-3 text-sm font-medium"
-              style={{
-                boxShadow: `0 0 0 1px ${toast.success ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)'
-                  }, 0 20px 60px -12px rgba(0,0,0,0.7)`
-              }}
-            >
-              {toast.success ? (
-                <CheckCircle2 size={16} className="text-success" />
-              ) : (
-                <XCircle size={16} className="text-error" />
-              )}
-              <span>{toast.message}</span>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <div className="app-footer relative z-10 flex shrink-0 items-center justify-between bg-[var(--footer)] px-5 py-2">
+        <p className="font-sans text-[12px] text-[var(--text-dim)]">
+          {spec ? 'made by ' : 'Made by '}
+          <a
+            href="https://github.com/EvroHQ"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => window.api?.trackLink('madeby')}
+            className="bg-accent-gradient bg-clip-text font-medium text-transparent"
+          >
+            @EvroHQ
+          </a>
+        </p>
+        <a
+          href="https://buymeacoffee.com/evrohq"
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => window.api?.trackLink('coffee')}
+          className="chrome-chip flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium transition-colors hover:text-[var(--text)]"
+        >
+          <Coffee size={13} className="text-accentMid" />
+          Buy me a coffee
+        </a>
+      </div>
+
+      <Toaster
+        theme={LIGHT_THEMES.has(theme) ? 'light' : 'dark'}
+        position="top-center"
+        offset={16}
+        duration={2000}
+        gap={8}
+        visibleToasts={3}
+        icons={{
+          success: <CheckCircle2 size={16} strokeWidth={2.4} />,
+          error: <XCircle size={16} strokeWidth={2.4} />,
+          info: <Info size={16} strokeWidth={2.4} />,
+          warning: <AlertTriangle size={16} strokeWidth={2.4} />,
+          loading: <Loader2 size={16} strokeWidth={2.4} className="animate-spin" />
+        }}
+        toastOptions={{
+          classNames: {
+            toast: 'app-toast',
+            title: 'app-toast-title',
+            icon: 'app-toast-icon',
+            success: 'app-toast--success',
+            error: 'app-toast--error',
+            info: 'app-toast--info',
+            warning: 'app-toast--warning',
+            loading: 'app-toast--loading'
+          }
+        }}
+      />
     </div>
   )
 }
@@ -911,11 +926,11 @@ function SinglePreview({ info, loading, error, empty, sizeLabel }) {
         {info.title || 'Untitled video'}
       </h2>
       {meta && <p className="mt-1 text-[12px] text-text-secondary">{meta}</p>}
-      <div className="mt-auto flex items-center justify-between border-t border-white/5 pt-3 text-[11px]">
-        <span className="text-text-secondary">
+      <div className="-mx-5 -mb-5 mt-auto flex items-center justify-between border-t border-[var(--border)] bg-[var(--panel-footer)] px-5 py-3 font-mono text-[12px]">
+        <span className="text-[var(--text-dim)]">
           {info.duration != null ? `Full length · ${fmtLong(info.duration)}` : 'Length unknown'}
         </span>
-        {sizeLabel && <span className="font-medium text-text-body">{sizeLabel}</span>}
+        {sizeLabel && <span className="size-estimate">{sizeLabel}</span>}
       </div>
     </div>
   )
@@ -979,52 +994,54 @@ function PlaylistPreview({
       </div>
 
       {/* Tracks */}
-      <div className="list-scroll -mr-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-2">
-        {tracks.map((t, i) => {
-          const checked = selected.has(t.id)
-          return (
-            <button
-              key={t.id}
-              onClick={() => onToggle(t.id)}
-              className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/5"
-              style={{ opacity: checked ? 1 : 0.45 }}
-            >
-              <span
-                className={`grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] transition-colors ${checked ? 'bg-accent-gradient' : 'border border-white/25'
-                  }`}
+      <div className="list-scroll -mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="divide-y divide-[var(--border)]">
+          {tracks.map((t, i) => {
+            const checked = selected.has(t.id)
+            return (
+              <button
+                key={t.id}
+                onClick={() => onToggle(t.id)}
+                className="track-row flex w-full items-center gap-3 px-1 py-2.5 text-left"
+                style={{ opacity: checked ? 1 : 0.45 }}
               >
-                {checked && <Check size={12} className="text-white" strokeWidth={3} />}
-              </span>
-              <span className="w-5 shrink-0 text-right font-mono text-[11px] text-text-muted">
-                {pad2(i + 1)}
-              </span>
-              {t.thumbnail ? (
-                <img
-                  src={t.thumbnail}
-                  alt=""
-                  draggable={false}
-                  className="h-7 w-11 shrink-0 rounded object-cover ring-1 ring-white/10"
-                />
-              ) : (
-                <span className="striped h-7 w-11 shrink-0 rounded ring-1 ring-white/10" />
-              )}
-              <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">
-                {t.title}
-              </span>
-              <span className="shrink-0 font-mono text-[11px] text-text-secondary">
-                {t.duration != null ? fmtClock(t.duration) : '—'}
-              </span>
-            </button>
-          )
-        })}
+                <span
+                  className={`track-check grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] ${checked ? 'is-checked' : ''
+                    }`}
+                >
+                  {checked && <Check size={12} className="track-check-mark" strokeWidth={3} />}
+                </span>
+                <span className="w-5 shrink-0 text-right font-mono text-[11px] text-[var(--text-faint)]">
+                  {pad2(i + 1)}
+                </span>
+                {t.thumbnail ? (
+                  <img
+                    src={t.thumbnail}
+                    alt=""
+                    draggable={false}
+                    className="h-7 w-11 shrink-0 rounded object-cover ring-1 ring-[var(--border)]"
+                  />
+                ) : (
+                  <span className="striped h-7 w-11 shrink-0 rounded ring-1 ring-[var(--border)]" />
+                )}
+                <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--text)]">
+                  {t.title}
+                </span>
+                <span className="shrink-0 font-mono text-[12px] text-[var(--text-dim)]">
+                  {t.duration != null ? fmtClock(t.duration) : '—'}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Footer */}
-      <div className="mt-3 flex shrink-0 items-center justify-between border-t border-white/5 pt-3 text-[11px]">
-        <span className="text-text-secondary">
+      <div className="-mx-5 -mb-5 mt-auto flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--panel-footer)] px-5 py-3 font-mono text-[12px]">
+        <span className="text-[var(--text-dim)]">
           {selected.size} of {tracks.length} selected{selectedSecs > 0 ? ` · ${fmtLong(selectedSecs)}` : ''}
         </span>
-        <span className="font-medium text-text-body">{sizeLabel}</span>
+        <span className="size-estimate">{sizeLabel}</span>
       </div>
     </div>
   )
@@ -1071,7 +1088,7 @@ function UpdateBanner({ title, subtitle, actionLabel, onAction, busy, progress }
               <button
                 onClick={onAction}
                 disabled={busy}
-                className={`rounded-xl px-3.5 py-1.5 text-xs font-semibold text-white transition-opacity ${busy ? 'cursor-not-allowed bg-white/10 text-text-muted' : 'bg-accent-gradient shadow-glow'
+                className={`rounded-[8px] px-3.5 py-1.5 text-xs font-semibold transition-opacity ${busy ? 'cursor-not-allowed bg-white/10 text-text-muted' : 'bg-accent-gradient text-[var(--on-accent)] shadow-glow'
                   }`}
               >
                 {actionLabel}
@@ -1084,17 +1101,110 @@ function UpdateBanner({ title, subtitle, actionLabel, onAction, busy, progress }
   )
 }
 
+function AppLogo() {
+  return (
+    <span className="h-9 w-9 shrink-0 overflow-hidden rounded-[22%] bg-accent-gradient">
+      <svg viewBox="0 0 1024 1024" className="h-full w-full" aria-hidden>
+        <g fill="var(--on-accent)">
+          <path d="M460 264h104v152h-104z" />
+          <path d="M352 416h320L512 648z" />
+          <rect x="352" y="688" width="320" height="50" rx="25" />
+        </g>
+      </svg>
+    </span>
+  )
+}
+
+function ThemeMenu({ value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="chrome-chip flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-colors hover:text-[var(--text)]"
+      >
+        Themes
+        <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-40 mt-1.5 min-w-[220px] overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface)] py-1 shadow-lg">
+          {THEMES.map((t) => {
+            const active = t.id === value
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  onChange(t.id)
+                  setOpen(false)
+                }}
+                className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] hover:bg-[var(--sunken)] ${active ? 'text-[var(--text)]' : 'text-[var(--text-dim)]'
+                  }`}
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/20"
+                  style={{ background: `var(--accent)` }}
+                  data-theme={t.id}
+                />
+                <span className="min-w-0 flex-1">
+                  {t.name}
+                  {LIGHT_THEMES.has(t.id) ? ' (light)' : ''}
+                </span>
+                {active && <Check size={13} className="shrink-0 text-text-primary" />}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SectionLabel({ children, className = '' }) {
   return (
     <label
-      className={`mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-text-muted ${className}`}
+      className={`section-label mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-text-muted ${className}`}
     >
       {children}
     </label>
   )
 }
 
-function FormatCard({ active, onClick, icon, title, subtitle }) {
+function FormatCard({ spec, active, onClick, icon, title, subtitle }) {
+  if (spec) {
+    return (
+      <button
+        onClick={onClick}
+        className="flex items-start gap-2 rounded-[10px] border px-3.5 py-[14px] text-left transition-colors"
+        style={{
+          borderColor: active ? 'var(--accent)' : 'var(--border)',
+          borderWidth: active ? 1.5 : 1,
+          background: active ? 'var(--accent-surface)' : 'var(--sunken)'
+        }}
+      >
+        <span
+          className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full"
+          style={{ background: active ? 'var(--accent)' : 'var(--border-strong)' }}
+        />
+        <span>
+          <span className="block text-[13px] font-semibold leading-tight text-[var(--text)]">{title}</span>
+          <span className="mt-0.5 block font-mono text-[11px] text-[var(--text-dim)]">{subtitle}</span>
+        </span>
+      </button>
+    )
+  }
   return (
     <button
       onClick={onClick}
@@ -1126,7 +1236,20 @@ function FormatCard({ active, onClick, icon, title, subtitle }) {
   )
 }
 
-function Pill({ active, onClick, group, children }) {
+function Pill({ spec, active, onClick, group, children }) {
+  if (spec) {
+    return (
+      <button
+        onClick={onClick}
+        className={`flex-1 rounded-[7px] py-2 text-center font-mono text-[12px] transition-colors ${active
+          ? 'bg-[var(--control)] font-medium text-[var(--text)] shadow-[0_1px_2px_rgba(0,0,0,0.10)] ring-1 ring-[var(--border)]'
+          : 'text-[var(--text-dim)]'
+          }`}
+      >
+        {children}
+      </button>
+    )
+  }
   return (
     <button
       onClick={onClick}
@@ -1145,7 +1268,18 @@ function Pill({ active, onClick, group, children }) {
   )
 }
 
-function ModeTab({ active, onClick, children }) {
+function ModeTab({ spec, active, onClick, children }) {
+  if (spec) {
+    return (
+      <button
+        onClick={onClick}
+        className={`rounded-[7px] px-3 py-1 text-[12px] font-medium transition-colors ${active ? 'bg-accent-gradient text-[var(--on-accent)]' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
+          }`}
+      >
+        {children}
+      </button>
+    )
+  }
   return (
     <button
       onClick={onClick}
@@ -1168,7 +1302,7 @@ function GhostBtn({ onClick, children }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:border-white/20 hover:text-text-primary"
+      className="ghost-btn px-2.5 py-1 text-[11px] font-medium"
     >
       {children}
     </button>
@@ -1179,7 +1313,7 @@ function EmbedToggle({ on, onToggle, audioFormat }) {
   return (
     <button
       onClick={onToggle}
-      className="glass-soft flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-left transition-colors hover:border-white/10"
+      className="flex w-full items-center justify-between gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-left"
     >
       <span className="min-w-0">
         <span className="block text-sm font-medium">Embed metadata &amp; cover art</span>
@@ -1197,7 +1331,7 @@ function EmbedToggle({ on, onToggle, audioFormat }) {
 function Switch({ on }) {
   return (
     <span
-      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${on ? 'bg-accent-gradient' : 'bg-white/10'
+      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${on ? 'bg-accent-gradient' : 'bg-[var(--border-strong)]'
         }`}
     >
       <span
@@ -1218,7 +1352,7 @@ function RangeInput({ label, value, onChange }) {
         inputMode="numeric"
         maxLength={8}
         placeholder="hh:mm:ss"
-        className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-center font-mono text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-accentMid/70 focus:outline-none"
+        className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-center font-mono text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] transition-colors focus:border-[var(--accent)] focus:outline-none"
       />
     </div>
   )

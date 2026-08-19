@@ -3,7 +3,6 @@ import { join } from 'path'
 import { existsSync, readdirSync, unlinkSync, mkdirSync, renameSync, createWriteStream } from 'fs'
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
-import os from 'os'
 import Store from 'electron-store'
 import { autoUpdater } from 'electron-updater'
 import appIcon from '../../resources/icon.ico?asset'
@@ -28,7 +27,8 @@ const store = new Store({
   defaults: {
     outputFolder: '',
     telemetryEnabled: true,
-    installId: ''
+    installId: '',
+    theme: 'evrohq'
   }
 })
 
@@ -36,11 +36,9 @@ let mainWindow = null
 let currentChild = null
 let cancelRequested = false
 
-// Fixed size, tall enough to fit the busiest state (trim open + downloading)
-// with the footer and progress bar always visible. The console (flex-1)
-// absorbs the slack in lighter states.
-const WINDOW_WIDTH = 1050
-const WINDOW_HEIGHT = 820
+// Mockup window: 1052 × 697, left column 462, preview 1fr, gap 22, pad 20.
+const WINDOW_WIDTH = 1052
+const WINDOW_HEIGHT = 697
 
 const CANCELLED = '__CANCELLED__'
 
@@ -243,23 +241,6 @@ function getInstallId() {
   return id
 }
 
-// Extract the YouTube video id from a URL (watch?v=, youtu.be/, shorts/, ...).
-function extractYouTubeId(value) {
-  try {
-    let v = String(value == null ? '' : value).trim()
-    if (!v) return null
-    if (!/^https?:\/\//i.test(v)) v = `https://${v}`
-    const u = new URL(v)
-    const host = u.hostname.toLowerCase().replace(/^www\./, '')
-    if (host === 'youtu.be') return u.pathname.slice(1) || null
-    if (u.pathname === '/watch') return u.searchParams.get('v')
-    const m = u.pathname.match(/^\/(?:shorts|live|embed|v)\/([\w-]+)/)
-    return m ? m[1] : null
-  } catch (e) {
-    return null
-  }
-}
-
 // Fire-and-forget usage telemetry ping. Never throws and never blocks the app —
 // failures are silently ignored. `extra` carries per-event details.
 function sendTelemetry(event, extra = {}) {
@@ -269,9 +250,6 @@ function sendTelemetry(event, extra = {}) {
       install_id: getInstallId(),
       event,
       app_version: app.getVersion(),
-      os: process.platform,
-      os_version: os.release(),
-      arch: process.arch,
       locale: app.getLocale() || null,
       ...extra
     }
@@ -1020,11 +998,23 @@ ipcMain.handle('select-folder', async () => {
   return folder
 })
 
+const THEME_IDS = [
+  'evrohq',
+  'graphite-amber',
+  'carbon-cyan',
+  'paper-rust',
+  'bone-forest',
+  'obsidian-violet',
+  'charcoal-red'
+]
+
 ipcMain.handle('get-config', () => {
+  const theme = store.get('theme')
   return {
     outputFolder: store.get('outputFolder') || app.getPath('downloads'),
     version: app.getVersion(),
-    telemetryEnabled: store.get('telemetryEnabled') !== false
+    telemetryEnabled: store.get('telemetryEnabled') !== false,
+    theme: THEME_IDS.includes(theme) ? theme : 'evrohq'
   }
 })
 
@@ -1034,6 +1024,9 @@ ipcMain.handle('set-config', (_event, cfg) => {
   }
   if (cfg && typeof cfg.telemetryEnabled === 'boolean') {
     store.set('telemetryEnabled', cfg.telemetryEnabled)
+  }
+  if (cfg && typeof cfg.theme === 'string' && THEME_IDS.includes(cfg.theme)) {
+    store.set('theme', cfg.theme)
   }
   return true
 })
@@ -1049,9 +1042,10 @@ ipcMain.handle('start-download', async (_event, params) => {
   cancelRequested = false
   const details = {
     url: params?.url || null,
-    video_id: extractYouTubeId(params?.url),
     format: params?.format || null,
     quality: params?.format === 'audio' ? params?.audioFormat || null : params?.videoQuality || null,
+    playlist: false,
+    item_count: 1,
     trim: !!params?.useRange,
     by_chapters: !!params?.byChapters,
     chapter_count: Number.isFinite(params?.chapterCount) ? params.chapterCount : null
@@ -1079,12 +1073,18 @@ ipcMain.handle('start-download', async (_event, params) => {
 
 ipcMain.handle('start-playlist-download', async (_event, params) => {
   cancelRequested = false
+  const itemCount = Number.isFinite(params?.itemCount)
+    ? params.itemCount
+    : typeof params?.playlistItems === 'string'
+      ? params.playlistItems.split(',').filter((s) => s.trim()).length
+      : null
   const details = {
     url: params?.url || null,
-    video_id: null,
     format: params?.format || null,
     quality:
       params?.format === 'audio' ? params?.audioFormat || null : params?.videoQuality || null,
+    playlist: true,
+    item_count: itemCount || null,
     trim: false,
     by_chapters: false,
     chapter_count: null

@@ -83,8 +83,8 @@ npm run build:win
 
 Output goes to `release/`:
 
-- `EvroHQ YouTube Downloader-Setup-2.0.0.exe` (NSIS installer)
-- `EvroHQ YouTube Downloader-Portable-2.0.0.exe` (portable)
+- `EvroHQ YouTube Downloader-Setup-2.1.0.exe` (NSIS installer)
+- `EvroHQ YouTube Downloader-Portable-2.1.0.exe` (portable)
 
 ### Known issue: winCodeSign symlink extraction on Windows
 

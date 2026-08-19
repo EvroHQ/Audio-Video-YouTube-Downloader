@@ -4,25 +4,25 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        base: '#09090b',
-        surface: '#111114',
-        'surface-border': '#232329',
-        'text-primary': '#d4d4d8',
-        'text-body': '#d4d4d8',
-        'text-secondary': '#71717a',
-        'text-muted': '#52525b',
-        accentStart: '#5618a7',
-        accentMid: '#a02368',
-        accentEnd: '#db2736',
+        base: 'var(--bg)',
+        surface: 'var(--surface)',
+        'surface-border': 'var(--border)',
+        'text-primary': 'var(--text)',
+        'text-body': 'var(--text)',
+        'text-secondary': 'var(--text-dim)',
+        'text-muted': 'var(--text-faint)',
+        accentStart: 'var(--accent)',
+        accentMid: 'var(--accent)',
+        accentEnd: 'var(--accent)',
         success: '#22c55e',
         error: '#ef4444'
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono"', '"Fira Code"', 'Consolas', 'monospace']
+        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-mono)', 'monospace']
       },
       backgroundImage: {
-        'accent-gradient': 'linear-gradient(100deg, #5618A7 0%, #DB2736 100%)',
+        'accent-gradient': 'var(--accent-gradient)',
         'accent-gradient-soft':
           'linear-gradient(100deg, rgba(86, 24, 167, 0.18) 0%, rgba(219, 39, 54, 0.18) 100%)'
       },

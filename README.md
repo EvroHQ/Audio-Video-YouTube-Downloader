@@ -6,7 +6,7 @@ A simple, modern Windows app to download **audio** or **video** from YouTube —
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-orange?logo=buymeacoffee&logoColor=white)](https://buymeacoffee.com/evrohq)
 
-![EvroHQ YouTube Downloader](docs/screenshot.png)
+![EvroHQ YouTube Downloader](docs/evrohq.png)
 
 Everything is built in — no extra tools, no terminal, no setup.
 
@@ -20,6 +20,31 @@ Everything is built in — no extra tools, no terminal, no setup.
 - 🏷️ **Embed metadata & cover art** — write tags into audio files (cover art needs MP3)
 - 🔄 **Updates** — the app and yt-dlp can update in-place so YouTube downloads keep working
 - 📦 **All-in-one** — yt-dlp, ffmpeg and a tiny JS runtime are bundled; nothing else to install
+- 🎨 **Themes** — seven looks (dark and light); your pick is remembered next time
+
+## Themes
+
+Open **Themes** in the header to switch. The last choice is restored when you reopen the app.
+
+### Dark
+
+| EvroHQ | Graphite & Amber |
+|:---:|:---:|
+| <img src="docs/evrohq.png" alt="EvroHQ" width="480"> | <img src="docs/graphite-amber.png" alt="Graphite & Amber" width="480"> |
+
+| Carbon & Cyan | Obsidian & Violet |
+|:---:|:---:|
+| <img src="docs/carbon-cyan.png" alt="Carbon & Cyan" width="480"> | <img src="docs/obsidian-violet.png" alt="Obsidian & Violet" width="480"> |
+
+| Charcoal & Signal Red |
+|:---:|
+| <img src="docs/charcoal-red.png" alt="Charcoal & Signal Red" width="480"> |
+
+### Light
+
+| Paper & Rust | Bone & Forest |
+|:---:|:---:|
+| <img src="docs/paper-rust.png" alt="Paper & Rust" width="480"> | <img src="docs/bone-forest.png" alt="Bone & Forest" width="480"> |
 
 ## Download
 
@@ -39,7 +64,7 @@ Get the latest version from the [**Releases page**](https://github.com/EvroHQ/Ev
    - Just type the digits — the field formats itself: typing `001030` becomes `00:10:30` (hh:mm:ss).
 4. *(Optional, audio)* Leave **Embed metadata & cover art** on to write title, artist and cover into the file. Cover art is embedded for MP3 only.
 5. **Choose the output folder** with **Change** (it's remembered next time). Default is your **Downloads** folder.
-6. Click **DOWNLOAD**. Follow progress in the status line, the bar, and the console.
+6. Click **DOWNLOAD**. Follow progress in the status line and the bar.
    - Need to cancel? Click **Stop**.
 
 ### Playlist
