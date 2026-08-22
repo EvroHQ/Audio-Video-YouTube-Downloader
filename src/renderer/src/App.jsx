@@ -10,6 +10,7 @@ import {
   Loader2,
   Check,
   Coffee,
+  Star,
   Film,
   Square,
   ChevronDown,
@@ -671,9 +672,9 @@ export default function App() {
                     </AnimatePresence>
                   </div>
                 ) : (
-                  <div className={`flex items-center gap-2.5 px-4 py-2.5 font-mono text-[12px] ${spec
+                  <div className={`flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium ${spec
                     ? 'rounded-[10px] border border-dashed border-[var(--border-strong)] bg-[var(--sunken)] text-[var(--text-dim)]'
-                    : 'rounded-2xl border border-dashed border-white/[0.20] text-sm font-medium text-text-muted'
+                    : 'rounded-2xl border border-dashed border-white/[0.20] text-text-muted'
                     }`}>
                     <span className="h-1.5 w-1.5 rounded-full bg-text-muted" />
                     Trimming is unavailable in playlist mode
@@ -685,7 +686,6 @@ export default function App() {
                   <EmbedToggle
                     on={embedMeta}
                     onToggle={() => setEmbedMeta((v) => !v)}
-                    audioFormat={audioFormat}
                   />
                 )}
 
@@ -824,21 +824,35 @@ export default function App() {
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => window.api?.trackLink('madeby')}
-            className="bg-accent-gradient bg-clip-text font-medium text-transparent"
+            className="font-medium text-accentMid transition-opacity hover:opacity-80"
           >
             @EvroHQ
           </a>
         </p>
-        <a
-          href="https://buymeacoffee.com/evrohq"
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={() => window.api?.trackLink('coffee')}
-          className="chrome-chip flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium transition-colors hover:text-[var(--text)]"
-        >
-          <Coffee size={13} className="text-accentMid" />
-          Buy me a coffee
-        </a>
+        <div className="flex min-w-0 items-center gap-1 font-sans text-[12px] leading-none text-[var(--text-dim)]">
+          <span>If this helped,</span>
+          <a
+            href="https://github.com/EvroHQ/EvroHQ-YouTube-Downloader"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => window.api?.trackLink('star')}
+            className="inline-flex items-center gap-1 font-medium text-accentMid transition-opacity hover:opacity-80"
+          >
+            <Star size={11} strokeWidth={2.2} />
+            star it on GitHub
+          </a>
+          <span>or</span>
+          <a
+            href="https://buymeacoffee.com/evrohq"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => window.api?.trackLink('coffee')}
+            className="inline-flex items-center gap-1 font-medium text-accentMid transition-opacity hover:opacity-80"
+          >
+            <Coffee size={11} strokeWidth={2.2} />
+            buy me a coffee
+          </a>
+        </div>
       </div>
 
       <Toaster
@@ -1309,20 +1323,13 @@ function GhostBtn({ onClick, children }) {
   )
 }
 
-function EmbedToggle({ on, onToggle, audioFormat }) {
+function EmbedToggle({ on, onToggle }) {
   return (
     <button
       onClick={onToggle}
-      className="flex w-full items-center justify-between gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-left"
+      className="flex w-full items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-left"
     >
-      <span className="min-w-0">
-        <span className="block text-sm font-medium">Embed metadata &amp; cover art</span>
-        <span className="block text-[11px] text-text-secondary">
-          {audioFormat === 'mp3'
-            ? 'Tags + thumbnail written into the MP3'
-            : 'Tags written into the file (cover art needs MP3)'}
-        </span>
-      </span>
+      <span className="text-sm font-medium">Embed metadata &amp; cover art</span>
       <Switch on={on} />
     </button>
   )

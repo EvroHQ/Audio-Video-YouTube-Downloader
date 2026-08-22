@@ -1,6 +1,6 @@
 # EvroHQ YouTube Downloader
 
-A simple, modern Windows app to download **audio** or **video** from YouTube — single videos or whole playlists.
+A clean, modern Windows app to download **audio** or **video** from YouTube — single videos or whole playlists.
 
 [![Latest release](https://img.shields.io/github/v/release/EvroHQ/EvroHQ-YouTube-Downloader?label=download&logo=github)](https://github.com/EvroHQ/EvroHQ-YouTube-Downloader/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)

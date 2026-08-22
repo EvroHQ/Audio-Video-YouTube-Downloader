@@ -1032,7 +1032,7 @@ ipcMain.handle('set-config', (_event, cfg) => {
 })
 
 ipcMain.handle('track-link', (_event, which) => {
-  if (which === 'madeby' || which === 'coffee') {
+  if (which === 'madeby' || which === 'coffee' || which === 'star') {
     sendTelemetry('link_click', { link: which })
   }
   return true
